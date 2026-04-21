@@ -1,98 +1,11 @@
-<template>
-  <div class="app-container">
-    <a-layout class="main-layout" v-show="showMainInterface">
-      <a-layout-content class="content">
-        <div class="main-area">
-          <a-card>
-            <template #title>
-              <span class="card-title" @click="showSettings = true">随机点名器</span>
-            </template>
-            <div class="result-display">
-              <a-typography-title :level="1">
-                {{ selectedStudent ? selectedStudent.name : '暂无数据' }}
-              </a-typography-title>
-            </div>
-            <div class="select-actions">
-              <a-button v-if="!isSelecting" type="primary" size="large" @click="startManualSelect" :disabled="students.length === 0" class="large-button">
-                开始抽取
-              </a-button>
-              <a-button v-else type="primary" danger size="large" @click="stopManualSelect" class="large-button">
-                停止抽取
-              </a-button>
-              <a-button type="primary" size="large" @click="startAutoSelect" :disabled="students.length === 0 || isAutoSelecting" class="large-button">
-                自动抽取
-              </a-button>
-              <a-button @click="toggleFloating" type="primary" size="large" class="large-button">
-                {{ showFloating ? '隐藏悬浮窗' : '显示悬浮窗' }}
-              </a-button>
-            </div>
-          </a-card>
-        </div>
-      </a-layout-content>
-    </a-layout>
-
-    <a-modal v-model:open="showSettings" title="设置" :footer="null" width="800px">
-      <a-tabs v-model:activeKey="settingsTab">
-        <a-tab-pane key="general" tab="常规">
-          <a-form layout="vertical">
-            <a-form-item label="自动持续时间 (毫秒)">
-              <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="1000" />
-            </a-form-item>
-          </a-form>
-        </a-tab-pane>
-        <a-tab-pane key="students" tab="学生名单">
-          <a-space class="mb-3">
-            <a-button @click="showImport = true">导入</a-button>
-            <a-button @click="exportStudents" :disabled="students.length === 0">导出</a-button>
-            <a-popconfirm title="确定清空所有学生吗?" @confirm="clearAll" ok-text="确定" cancel-text="取消">
-              <a-button danger :disabled="students.length === 0">清空</a-button>
-            </a-popconfirm>
-          </a-space>
-          <a-form layout="inline" class="mb-3">
-            <a-form-item>
-              <a-input v-model:value="newStudentName" placeholder="输入姓名" @keyup.enter="addStudentHandler" style="width: 200px" />
-            </a-form-item>
-            <a-form-item>
-              <a-button type="primary" @click="addStudentHandler">添加</a-button>
-            </a-form-item>
-          </a-form>
-          <a-table :dataSource="students" :columns="studentColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'actions'">
-                <a-space>
-                  <a-button size="small" @click="openWeightEdit(record)">权重</a-button>
-                  <a-popconfirm title="确定删除吗?" @confirm="deleteStudentHandler(record.id)" ok-text="确定" cancel-text="取消">
-                    <a-button type="text" danger size="small">删除</a-button>
-                  </a-popconfirm>
-                </a-space>
-              </template>
-            </template>
-          </a-table>
-        </a-tab-pane>
-        <a-tab-pane key="history" tab="历史记录">
-          <a-timeline>
-            <a-timeline-item v-for="item in history" :key="item.id">
-              <p>{{ item.student_name }}</p>
-              <p class="history-time">{{ item.selected_at }}</p>
-            </a-timeline-item>
-          </a-timeline>
-          <a-empty v-if="history.length === 0" description="暂无数据" />
-          <a-divider />
-          <a-popconfirm title="确定清空历史吗?" @confirm="resetHistoryHandler" ok-text="确定" cancel-text="取消">
-            <a-button danger>清空历史</a-button>
-          </a-popconfirm>
-        </a-tab-pane>
-      </a-tabs>
-    </a-modal>
-  </div>
-</template>
-
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
-import { initDatabase, getAllStudents, getHistory, getSetting, setSetting, addStudent, updateStudentWeight, deleteStudent, clearAllStudents, importFromText, weightedRandomSelect, addHistoryRecord, resetHistory } from './db';
+import { initDatabase, getAllStudents, getHistory, getSetting, weightedRandomSelect, addHistoryRecord } from './db';
+import SettingsModal from './components/SettingsModal.vue';
 
 export default {
   name: 'App',
+  components: { SettingsModal },
   data() {
     return {
       students: [] as any[],
@@ -101,28 +14,13 @@ export default {
       isSelecting: false,
       isAutoSelecting: false,
       showSettings: false,
-      settingsTab: 'students',
-      showImport: false,
-      showWeightEdit: false,
-      showHistory: false,
       showFloating: false,
       showMainInterface: true,
-      newStudentName: '',
-      importText: '',
-      editWeight: 1,
-      editStudentId: null as number | null,
       autoDuration: 5000,
       intervalId: null as number | null,
       stopTimeoutId: null as number | null,
       animationFrame: null as number | null,
       isAnimating: false,
-      studentColumns: [
-        { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
-        { title: '姓名', dataIndex: 'name', key: 'name' },
-        { title: '权重', dataIndex: 'weight', key: 'weight', width: 80 },
-        { title: '次数', dataIndex: 'selected_count', key: 'selected_count', width: 100 },
-        { title: '操作', key: 'actions', width: 150 },
-      ],
     };
   },
   async mounted() {
@@ -147,58 +45,6 @@ export default {
     async loadSettings() {
       const duration = await getSetting('autoDuration');
       if (duration) this.autoDuration = parseInt(duration) || 5000;
-    },
-    async saveSettings() {
-      await setSetting('autoDuration', this.autoDuration.toString());
-    },
-    async addStudentHandler() {
-      if (!this.newStudentName.trim()) return;
-      await addStudent(this.newStudentName.trim(), 1);
-      this.newStudentName = '';
-      await this.loadStudents();
-    },
-    async updateWeight() {
-      if (this.editStudentId === null) return;
-      await updateStudentWeight(this.editStudentId, this.editWeight);
-      this.showWeightEdit = false;
-      this.editStudentId = null;
-      await this.loadStudents();
-    },
-    async deleteStudentHandler(id: number) {
-      await deleteStudent(id);
-      await this.loadStudents();
-    },
-    async clearAll() {
-      await clearAllStudents();
-      await this.loadStudents();
-      await this.loadHistory();
-    },
-    async importStudents() {
-      if (!this.importText.trim()) return;
-      await importFromText(this.importText);
-      this.importText = '';
-      this.showImport = false;
-      await this.loadStudents();
-    },
-    exportStudents() {
-      const lines = this.students.map((s: any) => `${s.name},${s.weight}`).join('\n');
-      const blob = new Blob([lines], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'students.txt';
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-    async resetHistoryHandler() {
-      await resetHistory();
-      await this.loadStudents();
-      await this.loadHistory();
-    },
-    openWeightEdit(student: any) {
-      this.editStudentId = student.id;
-      this.editWeight = student.weight;
-      this.showWeightEdit = true;
     },
     getRandomStudentPreview() {
       if (this.students.length === 0) return null;
@@ -298,13 +144,46 @@ export default {
     toggleMainInterface() {
       this.showMainInterface = !this.showMainInterface;
     },
-    async handleSaveSettings() {
-      await this.saveSettings();
-      this.showSettings = false;
-    },
   },
 };
 </script>
+
+<template>
+  <div class="app-container">
+    <a-layout class="main-layout" v-show="showMainInterface">
+      <a-layout-content class="content">
+        <div class="main-area">
+          <a-card>
+            <template #title>
+              <span class="card-title" @click="showSettings = true">随机点名器</span>
+            </template>
+            <div class="result-display">
+              <a-typography-title :level="1">
+                {{ selectedStudent ? selectedStudent.name : '请点击“开始抽取”按钮' }}
+              </a-typography-title>
+            </div>
+            <div class="select-actions">
+              <a-button v-if="!isSelecting" type="primary" size="large" @click="startManualSelect" :disabled="students.length === 0" class="large-button">
+                开始抽取
+              </a-button>
+              <a-button v-else type="primary" danger size="large" @click="stopManualSelect" class="large-button">
+                停止抽取
+              </a-button>
+              <a-button type="primary" size="large" @click="startAutoSelect" :disabled="students.length === 0 || isAutoSelecting" class="large-button">
+                自动抽取
+              </a-button>
+              <a-button @click="toggleFloating" type="primary" size="large" class="large-button">
+                {{ showFloating ? '隐藏悬浮窗' : '显示悬浮窗' }}
+              </a-button>
+            </div>
+          </a-card>
+        </div>
+      </a-layout-content>
+    </a-layout>
+
+    <SettingsModal v-model:open="showSettings" @refresh="loadStudents" />
+  </div>
+</template>
 
 <style>
 * {

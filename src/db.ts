@@ -17,7 +17,7 @@ let db: Database | null = null;
 
 export async function initDatabase(): Promise<Database> {
   if (db) return db;
-  db = await Database.load('sqlite:selector.db');
+  db = await Database.load('sqlite:./config.db');
   
   await db.execute(`
     CREATE TABLE IF NOT EXISTS students (
@@ -61,17 +61,53 @@ export async function getAllStudents(): Promise<Student[]> {
   return await database.select<Student[]>('SELECT * FROM students ORDER BY id');
 }
 
-export async function addStudent(name: string, weight: number = 1): Promise<void> {
+export async function addStudent(name: string, weight: number = 1): Promise<{ success: boolean; error?: string }> {
   const database = await getDatabase();
-  await database.execute(
-    'INSERT OR IGNORE INTO students (name, weight) VALUES ($1, $2)',
-    [name, weight]
+  
+  const existing = await database.select<{id: number}[]>(
+    'SELECT id FROM students WHERE name = $1',
+    [name]
   );
+  
+  if (existing.length > 0) {
+    return { success: false, error: '姓名已存在' };
+  }
+  
+  const result = await database.select<{id: number}[]>('SELECT id FROM students ORDER BY id');
+  
+  let nextId = 1;
+  for (const row of result) {
+    if (row.id !== nextId) break;
+    nextId++;
+  }
+  
+  await database.execute(
+    'INSERT INTO students (id, name, weight) VALUES ($1, $2, $3)',
+    [nextId, name, weight]
+  );
+  
+  return { success: true };
 }
 
 export async function updateStudentWeight(id: number, weight: number): Promise<void> {
   const database = await getDatabase();
   await database.execute('UPDATE students SET weight = $1 WHERE id = $2', [weight, id]);
+}
+
+export async function updateStudentName(id: number, name: string): Promise<{ success: boolean; error?: string }> {
+  const database = await getDatabase();
+  
+  const existing = await database.select<{id: number}[]>(
+    'SELECT id FROM students WHERE name = $1 AND id != $2',
+    [name, id]
+  );
+  
+  if (existing.length > 0) {
+    return { success: false, error: '姓名已存在' };
+  }
+  
+  await database.execute('UPDATE students SET name = $1 WHERE id = $2', [name, id]);
+  return { success: true };
 }
 
 export async function deleteStudent(id: number): Promise<void> {
@@ -85,26 +121,44 @@ export async function clearAllStudents(): Promise<void> {
   await database.execute('DELETE FROM students');
 }
 
-export async function importFromText(text: string): Promise<number> {
+export async function importFromText(text: string): Promise<{ success: boolean; count: number; errors: string[] }> {
   const database = await getDatabase();
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   let count = 0;
+  const errors: string[] = [];
   
   for (const line of lines) {
     const parts = line.split(/[,\t]/);
     const name = parts[0].trim();
     const weight = parts.length > 1 ? parseInt(parts[1]) || 1 : 1;
     
-    if (name) {
-      await database.execute(
-        'INSERT OR IGNORE INTO students (name, weight) VALUES ($1, $2)',
-        [name, weight]
-      );
-      count++;
+    if (!name) continue;
+    
+    const existing = await database.select<{id: number}[]>(
+      'SELECT id FROM students WHERE name = $1',
+      [name]
+    );
+    
+    if (existing.length > 0) {
+      errors.push(`"${name}" 已存在`);
+      continue;
     }
+    
+    const result = await database.select<{id: number}[]>('SELECT id FROM students ORDER BY id');
+    let nextId = 1;
+    for (const row of result) {
+      if (row.id !== nextId) break;
+      nextId++;
+    }
+    
+    await database.execute(
+      'INSERT INTO students (id, name, weight) VALUES ($1, $2, $3)',
+      [nextId, name, weight]
+    );
+    count++;
   }
   
-  return count;
+  return { success: errors.length === 0, count, errors };
 }
 
 export async function getSetting(key: string): Promise<string | null> {
