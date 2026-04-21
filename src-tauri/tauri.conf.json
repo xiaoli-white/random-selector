@@ -21,6 +21,21 @@
         "resizable": true,
         "fullscreen": false,
         "center": true
+      },
+      {
+        "title": "悬浮窗",
+        "label": "floating",
+        "url": "floating.html",
+        "width": 160,
+        "height": 160,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": false,
+        "visible": false,
+        "closable": false
       }
     ],
     "security": {

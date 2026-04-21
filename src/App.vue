@@ -1,13 +1,13 @@
 <template>
   <div class="app-container">
-    <a-layout class="main-layout">
+    <a-layout class="main-layout" v-show="showMainInterface">
       <a-layout-header class="header">
         <div class="header-content">
           <h1 class="app-title">随机点名器</h1>
           <div class="header-actions">
             <a-button @click="showSettings = true">设置</a-button>
             <a-button @click="toggleFloating" type="primary">
-              {{ showFloating ? '📤' : '📥' }}
+              {{ showFloating ? '隐藏悬浮窗' : '显示悬浮窗' }}
             </a-button>
           </div>
         </div>
@@ -86,33 +86,6 @@
         </div>
       </a-layout-content>
     </a-layout>
-
-    <div v-if="showFloating" class="floating-window">
-      <a-card class="floating-card" title="随机点名器" size="small">
-        <div class="floating-result">
-          <a-typography-title :level="3">
-            {{ selectedStudent ? selectedStudent.name : '暂无数据' }}
-          </a-typography-title>
-        </div>
-        <div class="floating-actions">
-          <a-button v-if="!isSelecting" type="primary" size="small" @click="startManualSelect" :disabled="students.length === 0">
-            开始
-          </a-button>
-          <a-button v-else type="danger" size="small" @click="stopManualSelect">
-            停止
-          </a-button>
-          <a-button v-if="!isAutoSelecting" type="primary" size="small" @click="startAutoSelect" :disabled="students.length === 0">
-            自动
-          </a-button>
-          <a-button v-else type="danger" size="small" @click="stopAutoSelect">
-            停止
-          </a-button>
-        </div>
-        <template #actions>
-          <a-button type="text" size="small" @click="toggleFloating">✕</a-button>
-        </template>
-      </a-card>
-    </div>
 
     <a-modal v-model:open="showSettings" title="设置" @ok="handleSaveSettings" ok-text="确定">
       <a-form layout="vertical">
@@ -255,33 +228,6 @@ body {
   margin-bottom: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid #f0f0f0;
-}
-
-.floating-window {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 1000;
-}
-
-.floating-card {
-  width: 280px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.floating-result {
-  padding: 24px 0;
-  text-align: center;
-  min-height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.floating-actions {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
 }
 
 .history-time {

@@ -1,4 +1,5 @@
 import { defineComponent } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { initDatabase, getAllStudents, getHistory, getSetting, setSetting, addStudent, updateStudentWeight, deleteStudent, clearAllStudents, importFromText, weightedRandomSelect, addHistoryRecord, resetHistory } from './db';
 
 export default defineComponent({
@@ -15,6 +16,7 @@ export default defineComponent({
       showWeightEdit: false,
       showHistory: false,
       showFloating: false,
+      showMainInterface: true,
       newStudentName: '',
       importText: '',
       editWeight: 1,
@@ -166,8 +168,23 @@ export default defineComponent({
         this.intervalId = null;
       }
     },
-    toggleFloating() {
-      this.showFloating = !this.showFloating;
+    showMain() {
+      this.showMainInterface = true;
+    },
+    async toggleFloating() {
+      try {
+        if (this.showFloating) {
+          await invoke('hide_floating_window');
+        } else {
+          await invoke('show_floating_window');
+        }
+        this.showFloating = !this.showFloating;
+      } catch (error) {
+        console.error('Failed to toggle floating window:', error);
+      }
+    },
+    toggleMainInterface() {
+      this.showMainInterface = !this.showMainInterface;
     },
     async handleSaveSettings() {
       await this.saveSettings();
