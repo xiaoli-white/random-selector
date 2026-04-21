@@ -233,7 +233,7 @@ export default {
     <a-tabs v-model:activeKey="settingsTab">
       <a-tab-pane key="general" tab="常规">
         <a-form layout="vertical">
-          <a-form-item label="自动持续时间 (毫秒)">
+          <a-form-item label="自动抽取持续时间 (毫秒)">
             <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="1000" />
           </a-form-item>
         </a-form>
@@ -292,8 +292,8 @@ export default {
       <a-tab-pane key="history" tab="历史记录">
         <a-timeline>
           <a-timeline-item v-for="item in history" :key="item.id">
-            <p>{{ item.student_name }}</p>
-            <p class="history-time">{{ item.selected_at }}</p>
+            <span class="history-time">{{ item.selected_at }}</span>
+            <span>{{ item.student_name }}</span>
           </a-timeline-item>
         </a-timeline>
         <a-empty v-if="history.length === 0" description="暂无数据" />
@@ -325,5 +325,6 @@ export default {
 .history-time {
   font-size: 12px;
   color: #999;
+  margin-right: 8px;
 }
 </style>
