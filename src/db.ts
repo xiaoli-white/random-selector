@@ -81,8 +81,8 @@ export async function deleteStudent(id: number): Promise<void> {
 
 export async function clearAllStudents(): Promise<void> {
   const database = await getDatabase();
-  await database.execute('DELETE FROM students');
   await database.execute('DELETE FROM history');
+  await database.execute('DELETE FROM students');
 }
 
 export async function importFromText(text: string): Promise<number> {
