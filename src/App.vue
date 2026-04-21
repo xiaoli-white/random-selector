@@ -27,85 +27,62 @@
               </a-button>
             </div>
           </a-card>
-
-          <a-card class="students-card" title="学生列表">
-            <template #extra>
-              <a-space>
-                <a-button size="small" @click="showImport = true">导入</a-button>
-                <a-button size="small" @click="exportStudents" :disabled="students.length === 0">导出</a-button>
-                <a-popconfirm title="确定清空所有学生吗?" @confirm="clearAll" ok-text="确定" cancel-text="取消">
-                  <a-button type="text" danger size="small" :disabled="students.length === 0">清空</a-button>
-                </a-popconfirm>
-              </a-space>
-            </template>
-            <a-row :gutter="[8, 8]" class="stats-row">
-              <a-col :span="8">
-                <a-statistic title="学生总数" :value="students.length" />
-              </a-col>
-              <a-col :span="8">
-                <a-statistic title="抽取次数" :value="history.length" />
-              </a-col>
-              <a-col :span="8">
-                <a-button size="small" @click="showHistory = true">历史</a-button>
-              </a-col>
-            </a-row>
-            <a-form layout="inline" class="add-form">
-              <a-form-item>
-                <a-input v-model:value="newStudentName" placeholder="输入姓名" @keyup.enter="addStudentHandler" style="width: 200px" />
-              </a-form-item>
-              <a-form-item>
-                <a-button type="primary" @click="addStudentHandler">添加</a-button>
-              </a-form-item>
-            </a-form>
-            <a-table :dataSource="students" :columns="studentColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'actions'">
-                  <a-space>
-                    <a-button size="small" @click="openWeightEdit(record)">权重</a-button>
-                    <a-popconfirm title="确定删除吗?" @confirm="deleteStudentHandler(record.id)" ok-text="确定" cancel-text="取消">
-                      <a-button type="text" danger size="small">删除</a-button>
-                    </a-popconfirm>
-                  </a-space>
-                </template>
-              </template>
-            </a-table>
-          </a-card>
         </div>
       </a-layout-content>
     </a-layout>
 
-    <a-modal v-model:open="showSettings" title="设置" @ok="handleSaveSettings" ok-text="确定">
-      <a-form layout="vertical">
-        <a-form-item label="自动持续时间 (毫秒)">
-          <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="1000" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <a-modal v-model:open="showImport" title="导入学生" @ok="importStudents" ok-text="确定">
-      <a-textarea v-model:value="importText" placeholder="每行一个学生，格式：姓名,权重（可选）" :rows="10" />
-    </a-modal>
-
-    <a-modal v-model:open="showWeightEdit" title="编辑权重" @ok="updateWeight" ok-text="确定">
-      <a-form layout="vertical">
-        <a-form-item label="权重">
-          <a-input-number v-model:value="editWeight" :min="1" :max="100" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <a-modal v-model:open="showHistory" title="历史记录" :footer="null">
-      <a-timeline>
-        <a-timeline-item v-for="item in history" :key="item.id">
-          <p>{{ item.student_name }}</p>
-          <p class="history-time">{{ item.selected_at }}</p>
-        </a-timeline-item>
-      </a-timeline>
-      <a-empty v-if="history.length === 0" description="暂无数据" />
-      <a-divider />
-      <a-popconfirm title="确定清空历史吗?" @confirm="resetHistoryHandler" ok-text="确定" cancel-text="取消">
-        <a-button type="text" danger>清空历史</a-button>
-      </a-popconfirm>
+    <a-modal v-model:open="showSettings" title="设置" :footer="null" width="800px">
+      <a-tabs v-model:activeKey="settingsTab">
+        <a-tab-pane key="general" tab="常规">
+          <a-form layout="vertical">
+            <a-form-item label="自动持续时间 (毫秒)">
+              <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="1000" />
+            </a-form-item>
+          </a-form>
+        </a-tab-pane>
+        <a-tab-pane key="students" tab="学生名单">
+          <a-space class="mb-3">
+            <a-button @click="showImport = true">导入</a-button>
+            <a-button @click="exportStudents" :disabled="students.length === 0">导出</a-button>
+            <a-popconfirm title="确定清空所有学生吗?" @confirm="clearAll" ok-text="确定" cancel-text="取消">
+              <a-button danger :disabled="students.length === 0">清空</a-button>
+            </a-popconfirm>
+          </a-space>
+          <a-form layout="inline" class="mb-3">
+            <a-form-item>
+              <a-input v-model:value="newStudentName" placeholder="输入姓名" @keyup.enter="addStudentHandler" style="width: 200px" />
+            </a-form-item>
+            <a-form-item>
+              <a-button type="primary" @click="addStudentHandler">添加</a-button>
+            </a-form-item>
+          </a-form>
+          <a-table :dataSource="students" :columns="studentColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'actions'">
+                <a-space>
+                  <a-button size="small" @click="openWeightEdit(record)">权重</a-button>
+                  <a-popconfirm title="确定删除吗?" @confirm="deleteStudentHandler(record.id)" ok-text="确定" cancel-text="取消">
+                    <a-button type="text" danger size="small">删除</a-button>
+                  </a-popconfirm>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+        <a-tab-pane key="history" tab="历史记录">
+          <a-timeline>
+            <a-timeline-item v-for="item in history" :key="item.id">
+              <p>{{ item.student_name }}</p>
+              <p class="history-time">{{ item.selected_at }}</p>
+            </a-timeline-item>
+          </a-timeline>
+          <a-empty v-if="history.length === 0" description="暂无数据" />
+          <a-divider />
+          <a-popconfirm title="确定清空历史吗?" @confirm="resetHistoryHandler" ok-text="确定" cancel-text="取消">
+            <a-button danger>清空历史</a-button>
+          </a-popconfirm>
+        </a-tab-pane>
+      </a-tabs>
     </a-modal>
   </div>
 </template>
@@ -124,6 +101,7 @@ export default {
       isSelecting: false,
       isAutoSelecting: false,
       showSettings: false,
+      settingsTab: 'students',
       showImport: false,
       showWeightEdit: false,
       showHistory: false,
