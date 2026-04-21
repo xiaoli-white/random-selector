@@ -1,4 +1,20 @@
 use tauri::Manager;
+use std::fs;
+
+#[tauri::command]
+fn get_exe_dir() -> String {
+    let exe_path = std::env::current_exe().unwrap_or_default();
+    let exe_dir = exe_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    exe_dir.to_string_lossy().to_string()
+}
+
+#[tauri::command]
+fn get_db_path() -> String {
+    let exe_path = std::env::current_exe().unwrap_or_default();
+    let exe_dir = exe_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let db_path = exe_dir.join("config.db");
+    db_path.to_string_lossy().to_string()
+}
 
 #[tauri::command]
 async fn show_floating_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -56,7 +72,9 @@ pub fn run() {
             show_floating_window,
             hide_floating_window,
             show_main_window,
-            hide_main_window
+            hide_main_window,
+            get_exe_dir,
+            get_db_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -56,7 +56,7 @@
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:selector.db"]
+      "preload": ["sqlite:config.db"]
     }
   }
 }

@@ -227,8 +227,12 @@ export default {
 <template>
   <a-modal v-model:open="visible" title="设置" width="800px" @cancel="handleClose">
     <template #footer>
-      <a-button @click="handleClose">取消</a-button>
-      <a-button type="primary" @click="handleSave" :disabled="!isDirty">保存</a-button>
+      <div style="text-align: center;">
+        <a-space>
+          <a-button @click="handleClose">取消</a-button>
+          <a-button type="primary" @click="handleSave" :disabled="!isDirty">保存</a-button>
+        </a-space>
+      </div>
     </template>
     <a-tabs v-model:activeKey="settingsTab">
       <a-tab-pane key="general" tab="常规">

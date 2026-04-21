@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface Student {
   id?: number;
@@ -17,7 +18,9 @@ let db: Database | null = null;
 
 export async function initDatabase(): Promise<Database> {
   if (db) return db;
-  db = await Database.load('sqlite:./config.db');
+  
+  const dbPath = await invoke<string>('get_db_path');
+  db = await Database.load(`sqlite:${dbPath}`);
   
   await db.execute(`
     CREATE TABLE IF NOT EXISTS students (
