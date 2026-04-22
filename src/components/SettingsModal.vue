@@ -26,14 +26,23 @@ export default {
       editingWeightKey: null as number | null,
       pendingAdds: [] as any[],
       pendingDeletes: [] as number[],
+      pendingEdits: [] as any[],
       pendingHistoryClear: false,
       studentColumns: [
         { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
         { title: '姓名', dataIndex: 'name', key: 'name' },
         { title: '权重', dataIndex: 'weight', key: 'weight', width: 80 },
-        { title: '次数', dataIndex: 'selected_count', key: 'selected_count', width: 100 },
         { title: '操作', key: 'actions', width: 80 },
+        { title: '选择', dataIndex: 'selected', key: 'selected', width: 60 },
       ],
+      statsColumns: [
+        { title: '排名', dataIndex: 'rank', key: 'rank', width: 60 },
+        { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
+        { title: '姓名', dataIndex: 'name', key: 'name' },
+        { title: '被抽中次数', dataIndex: 'selected_count', key: 'selected_count', width: 120 },
+      ],
+      selectedStudentIds: [] as number[],
+      batchWeight: 1,
       isDirty: false,
     };
   },
@@ -41,6 +50,11 @@ export default {
     visible: {
       get() { return this.open; },
       set(val: boolean) { this.$emit('update:open', val); }
+    },
+    sortedStats() {
+      return [...this.students]
+        .sort((a, b) => b.selected_count - a.selected_count)
+        .map((s, i) => ({ ...s, rank: i + 1 }));
     }
   },
   watch: {
@@ -62,33 +76,30 @@ export default {
       this.originalAutoDuration = this.autoDuration;
       this.pendingAdds = [];
       this.pendingDeletes = [];
+      this.pendingEdits = [];
       this.pendingHistoryClear = false;
       this.isDirty = false;
+      this.selectedStudentIds = [];
+      this.batchWeight = 1;
     },
     handleClose() {
-      if (this.isDirty) {
-        this.students = JSON.parse(JSON.stringify(this.originalStudents));
-        this.history = JSON.parse(JSON.stringify(this.originalHistory));
-        this.autoDuration = this.originalAutoDuration;
-        this.pendingAdds = [];
-        this.pendingDeletes = [];
-        this.pendingHistoryClear = false;
-        this.editingNameKey = null;
-        this.editingWeightKey = null;
-      }
+      this.visible = false;
       this.$emit('refresh');
     },
+    handleCancel() {
+      this.visible = false;
+    },
     checkDirty() {
-      const hasEdits = this.editingNameKey !== null || this.editingWeightKey !== null;
       const hasAdds = this.pendingAdds.length > 0;
       const hasDeletes = this.pendingDeletes.length > 0;
+      const hasEdits = this.pendingEdits.length > 0;
       const hasHistoryClear = this.pendingHistoryClear;
       const hasDurationChange = this.autoDuration !== this.originalAutoDuration;
-      this.isDirty = hasEdits || hasAdds || hasDeletes || hasHistoryClear || hasDurationChange;
+      this.isDirty = hasAdds || hasDeletes || hasEdits || hasHistoryClear || hasDurationChange;
     },
     async handleAddStudent() {
       if (!this.newStudentName.trim()) return;
-      const tempId = -Date.now();
+      const tempId = Date.now();
       this.pendingAdds.push({ id: tempId, name: this.newStudentName.trim(), weight: 1, selected_count: 0 });
       this.students.push({ id: tempId, name: this.newStudentName.trim(), weight: 1, selected_count: 0, isNew: true });
       this.newStudentName = '';
@@ -117,6 +128,57 @@ export default {
       this.history = [];
       this.checkDirty();
     },
+    selectAllStudents() {
+      this.selectedStudentIds = this.students.map(s => s.id);
+    },
+    deselectAllStudents() {
+      this.selectedStudentIds = [];
+    },
+    async batchDeleteStudents() {
+      if (this.selectedStudentIds.length === 0) return;
+      for (const id of this.selectedStudentIds) {
+        await this.handleDeleteStudent(id);
+      }
+      this.selectedStudentIds = [];
+    },
+    async batchUpdateWeight() {
+      if (this.selectedStudentIds.length === 0) return;
+      for (const id of this.selectedStudentIds) {
+        const student = this.students.find(s => s.id === id);
+        if (student) {
+          if ((student as any).isNew) {
+            const idx = this.students.indexOf(student);
+            const updated = { ...student, weight: this.batchWeight };
+            this.students.splice(idx, 1, updated);
+            const pending = this.pendingAdds.find(p => p.id === id);
+            if (pending) pending.weight = this.batchWeight;
+          } else {
+            const existingEdit = this.pendingEdits.find(e => e.id === id);
+            if (existingEdit) {
+              existingEdit.weight = this.batchWeight;
+            } else {
+              this.pendingEdits.push({ id, weight: this.batchWeight });
+            }
+            const idx = this.students.indexOf(student);
+            const updated = { ...student, weight: this.batchWeight };
+            this.students.splice(idx, 1, updated);
+          }
+        }
+      }
+      this.checkDirty();
+      message.success(`已将 ${this.selectedStudentIds.length} 个学生的权重修改为 ${this.batchWeight}，点击保存生效`);
+    },
+    isSelected(id: number): boolean {
+      return this.selectedStudentIds.includes(id);
+    },
+    toggleSelection(id: number) {
+      const idx = this.selectedStudentIds.indexOf(id);
+      if (idx === -1) {
+        this.selectedStudentIds.push(id);
+      } else {
+        this.selectedStudentIds.splice(idx, 1);
+      }
+    },
     showImportModal() {
       this.showImport = true;
     },
@@ -139,15 +201,29 @@ export default {
     },
     async importStudents() {
       if (!this.importText.trim()) return;
-      const result = await importFromText(this.importText);
+      const lines = this.importText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      let count = 0;
+      
+      for (const line of lines) {
+        const parts = line.split(/[,\t]/);
+        const name = parts[0].trim();
+        const weight = parts.length > 1 ? parseInt(parts[1]) || 1 : 1;
+        
+        if (!name) continue;
+        
+        const exists = this.students.some(s => s.name === name) || this.pendingAdds.some(a => a.name === name);
+        if (exists) continue;
+        
+        const tempId = Date.now() + count;
+        this.pendingAdds.push({ id: tempId, name, weight, selected_count: 0 });
+        this.students.push({ id: tempId, name, weight, selected_count: 0, isNew: true });
+        count++;
+      }
+      
       this.importText = '';
       this.showImport = false;
-      if (result.errors.length > 0) {
-        message.warning(`导入 ${result.count} 个，部分失败: ${result.errors.join(', ')}`);
-      } else {
-        message.success(`成功导入 ${result.count} 个学生`);
-      }
-      await this.loadData();
+      this.checkDirty();
+      message.success(`已添加 ${count} 个学生到待保存列表`);
     },
     startEditName(record: any) {
       this.editingNameKey = record.id;
@@ -165,21 +241,19 @@ export default {
         }
         const student = this.students.find(s => s.id === this.editingNameKey);
         if (student && !(student as any).isNew) {
-          const result = await updateStudentName(this.editingNameKey, this.editName.trim());
-          if (!result.success) {
-            message.error(result.error || '保存失败');
-            return;
-          }
+          this.pendingEdits.push({ id: this.editingNameKey, name: this.editName.trim() });
         } else if (student) {
-          student.name = this.editName.trim();
+          const idx = this.students.indexOf(student);
+          this.students.splice(idx, 1, { ...student, name: this.editName.trim() });
         }
       }
       if (this.editingWeightKey !== null) {
         const student = this.students.find(s => s.id === this.editingWeightKey);
         if (student && !(student as any).isNew) {
-          await updateStudentWeight(this.editingWeightKey, this.editWeight);
+          this.pendingEdits.push({ id: this.editingWeightKey, weight: this.editWeight });
         } else if (student) {
-          student.weight = this.editWeight;
+          const idx = this.students.indexOf(student);
+          this.students.splice(idx, 1, { ...student, weight: this.editWeight });
         }
       }
       this.editingNameKey = null;
@@ -194,7 +268,7 @@ export default {
       setTimeout(() => {
         const activeEl = document.activeElement;
         if (!activeEl || !activeEl.closest('.ant-table')) {
-          this.cancelEdits();
+          this.saveAllEdits();
         }
       }, 150);
     },
@@ -211,7 +285,14 @@ export default {
         await addStudent(student.name, student.weight);
       }
       
-      await this.saveAllEdits();
+      for (const edit of this.pendingEdits) {
+        if (edit.name !== undefined) {
+          await updateStudentName(edit.id, edit.name);
+        }
+        if (edit.weight !== undefined) {
+          await updateStudentWeight(edit.id, edit.weight);
+        }
+      }
       
       await setSetting('autoDuration', this.autoDuration.toString());
       
@@ -225,12 +306,12 @@ export default {
 </script>
 
 <template>
-  <a-modal v-model:open="visible" title="设置" width="800px" @cancel="handleClose">
+  <a-modal v-model:open="visible" title="管理面板" width="800px" @cancel="handleClose">
     <template #footer>
       <div style="text-align: center;">
         <a-space>
-          <a-button @click="handleClose">取消</a-button>
-          <a-button type="primary" @click="handleSave" :disabled="!isDirty">保存</a-button>
+          <a-button @click="handleCancel">取消</a-button>
+          <a-button type="primary" @click="handleSave">保存</a-button>
         </a-space>
       </div>
     </template>
@@ -244,6 +325,15 @@ export default {
       </a-tab-pane>
       <a-tab-pane key="students" tab="学生名单">
         <a-space class="mb-3">
+          <a-button @click="selectAllStudents">全选</a-button>
+          <a-button @click="deselectAllStudents">取消全选</a-button>
+          <a-popconfirm title="确定删除选中的学生吗?" @confirm="batchDeleteStudents" ok-text="确定" cancel-text="取消">
+            <a-button danger :disabled="selectedStudentIds.length === 0">删除选中 ({{ selectedStudentIds.length }})</a-button>
+          </a-popconfirm>
+          <a-space>
+            <a-button :disabled="selectedStudentIds.length === 0" @click="batchUpdateWeight">修改选中权重为</a-button>
+            <a-input-number v-model:value="batchWeight" :min="1" :max="100" size="small" style="width: 60px" />
+          </a-space>
           <a-button @click="showImportModal">导入</a-button>
           <a-popconfirm title="确定清空所有学生吗?" @confirm="handleClearAll" ok-text="确定" cancel-text="取消">
             <a-button danger :disabled="students.length === 0">清空</a-button>
@@ -259,6 +349,9 @@ export default {
         </a-form>
         <a-table :dataSource="students" :columns="studentColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
           <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'selected'">
+              <a-checkbox :checked="isSelected(record.id)" @change="toggleSelection(record.id)" />
+            </template>
             <template v-if="column.key === 'name'">
               <a-input 
                 v-if="editingNameKey === record.id" 
@@ -305,6 +398,18 @@ export default {
         <a-popconfirm title="确定清空历史吗?" @confirm="handleResetHistory" ok-text="确定" cancel-text="取消">
           <a-button danger>清空历史</a-button>
         </a-popconfirm>
+      </a-tab-pane>
+      <a-tab-pane key="stats" tab="统计">
+        <a-table :dataSource="sortedStats" :columns="statsColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'rank'">
+              <span>{{ record.rank }}</span>
+            </template>
+            <template v-else-if="column.key === 'selected_count'">
+              <span>{{ record.selected_count }}</span>
+            </template>
+          </template>
+        </a-table>
       </a-tab-pane>
     </a-tabs>
   </a-modal>
