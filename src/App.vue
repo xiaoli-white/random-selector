@@ -1,7 +1,8 @@
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { message } from 'ant-design-vue';
-import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item } from './db';
+import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
 export default {
@@ -42,13 +43,15 @@ export default {
     await this.loadItems();
     await this.loadHistory();
     await this.loadSettings();
-    document.title = this.t('windowTitle', 'Random Selector');
+    await this.restoreFloatingWindowState();
+    await this.setupWindowCloseHandler();
   },
   beforeUnmount() {
     this.stopAutoSelect();
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
     }
+    this.saveFloatingWindowState();
   },
   methods: {
     async loadCustomTexts() {
@@ -57,9 +60,30 @@ export default {
       document.title = title;
       try {
         await invoke('set_window_title', { title });
+        await invoke('update_tray_menu', { 
+          showMainText: this.t('trayShowMain', 'Show Main'),
+          quitText: this.t('trayQuit', 'Quit')
+        });
       } catch (e) {
         console.error('Failed to set window title:', e);
       }
+    },
+    async restoreFloatingWindowState() {
+      const enabled = await getFloatingWindowState();
+      if (enabled && !this.showFloating) {
+        await this.toggleFloating();
+      }
+    },
+    saveFloatingWindowState() {
+      setFloatingWindowState(this.showFloating);
+    },
+    async setupWindowCloseHandler() {
+      const appWindow = getCurrentWindow();
+      await appWindow.onCloseRequested(async (event) => {
+        event.preventDefault();
+        this.saveFloatingWindowState();
+        await invoke('hide_main_window');
+      });
     },
     async loadItems() {
       this.items = await getAllItems();

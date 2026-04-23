@@ -72,6 +72,8 @@ export default {
         { key: 'btnHideFloat', label: 'Hide Float Button', fallback: 'Hide Float' },
         { key: 'btnShowMain', label: 'Show Main Button', fallback: 'Show Main' },
         { key: 'btnHideMain', label: 'Hide Main Button', fallback: 'Hide Main' },
+        { key: 'trayShowMain', label: 'Tray Menu - Show Main', fallback: 'Show Main' },
+        { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit' },
         { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button' },
         { key: 'errorNoActiveItems', label: 'No Active Items Error', fallback: 'No active items available' },
         { key: 'errorRecordFailed', label: 'Record Failed Error', fallback: 'Failed to record selection' },

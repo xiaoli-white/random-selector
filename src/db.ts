@@ -305,3 +305,12 @@ export async function getCustomTexts(): Promise<Record<string, string>> {
   }
   return {};
 }
+
+export async function getFloatingWindowState(): Promise<boolean> {
+  const stored = await getSetting('floating_window_enabled');
+  return stored === 'true';
+}
+
+export async function setFloatingWindowState(enabled: boolean): Promise<void> {
+  await setSetting('floating_window_enabled', enabled ? 'true' : 'false');
+}
