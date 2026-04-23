@@ -2,7 +2,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { message } from 'ant-design-vue';
-import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState } from './db';
+import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
 export default {
@@ -18,7 +18,7 @@ export default {
       showSettings: false,
       showFloating: false,
       showMainInterface: true,
-      autoDuration: 3000,
+      autoDuration: 2000,
       intervalId: null as number | null,
       stopTimeoutId: null as number | null,
       animationFrame: null as number | null,
@@ -68,14 +68,9 @@ export default {
     },
     async updateTrayMenu() {
       try {
-        const isVisible = await invoke('is_main_window_visible');
-        const showMainText = isVisible 
-          ? this.t('trayHideMain', 'Hide Main')
-          : this.t('trayShowMain', 'Show Main');
-        await invoke('update_tray_menu', { 
-          showMainText,
-          quitText: this.t('trayQuit', 'Quit'),
-          isMainVisible: isVisible
+        await invoke('update_tray_menu', {
+          toggleText: this.t('trayToggleMain', 'Toggle Main'),
+          quitText: this.t('trayQuit', 'Quit')
         });
       } catch (e) {
         console.error('Failed to update tray menu:', e);
@@ -138,7 +133,13 @@ export default {
     },
     async loadSettings() {
       const duration = await getSetting('autoDuration');
-      if (duration) this.autoDuration = parseInt(duration) || 3000;
+      if (duration) this.autoDuration = parseInt(duration) || 2000;
+      const alwaysOnTop = await getMainWindowAlwaysOnTop();
+      try {
+        await invoke('set_main_window_always_on_top', { alwaysOnTop });
+      } catch (e) {
+        console.error('Failed to set main window always on top:', e);
+      }
     },
     getRandomItemPreview() {
       if (this.activeItems.length === 0) return null;
@@ -146,11 +147,12 @@ export default {
     },
     async recordSelectedItem() {
       if (!this.selectedItem) return;
+      const recordedItem = { ...this.selectedItem };
       try {
-        await addHistoryRecord(this.selectedItem.id!, this.selectedItem.name);
-        this.selectedItem = weightedRandomSelect(this.items);
+        await addHistoryRecord(recordedItem.id!, recordedItem.name);
         await this.loadHistory();
         await this.loadItems();
+        this.selectedItem = recordedItem;
       } catch (error) {
         message.error(this.t('errorRecordFailed', 'Failed to record selection'));
       }
@@ -383,9 +385,11 @@ body {
 
 .large-button {
   height: 80px;
-  padding: 0 48px;
-  font-size: 22px;
+  padding: 12px 24px;
+  font-size: clamp(16px, 4vw, 22px);
   font-weight: 500;
+  word-break: keep-all;
+  flex: 0 1 auto;
 }
 
 .items-card {

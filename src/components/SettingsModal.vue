@@ -4,7 +4,7 @@ import {
   getAllItems, getHistory, getSetting, setSetting, 
   addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem, 
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
-  getCustomTexts, saveCustomTexts
+  getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop
 } from '../db';
 
 export default {
@@ -19,8 +19,10 @@ export default {
       history: [] as any[],
       originalItems: [] as any[],
       originalHistory: [] as any[],
-      autoDuration: 3000,
-      originalAutoDuration: 3000,
+      autoDuration: 2000,
+      originalAutoDuration: 2000,
+      mainWindowAlwaysOnTop: false,
+      originalMainWindowAlwaysOnTop: false,
       settingsTab: 'items',
       showImport: false,
       newItemName: '',
@@ -63,23 +65,21 @@ export default {
       customTexts: {} as Record<string, string>,
       originalCustomTexts: {} as Record<string, string>,
       customTextFields: [
-        { key: 'windowTitle', label: 'Window Title (System Title Bar)', fallback: 'Random Selector' },
-        { key: 'appTitle', label: 'App Title (Main Display)', fallback: 'Random Selector' },
-        { key: 'btnStart', label: 'Start Button', fallback: 'Start' },
-        { key: 'btnStop', label: 'Stop Button', fallback: 'Stop' },
-        { key: 'btnAuto', label: 'Auto Button', fallback: 'Auto' },
-        { key: 'btnShowFloat', label: 'Show Float Button', fallback: 'Show Float' },
-        { key: 'btnHideFloat', label: 'Hide Float Button', fallback: 'Hide Float' },
-        { key: 'btnShowMain', label: 'Show Main Button', fallback: 'Show Main' },
-        { key: 'btnHideMain', label: 'Hide Main Button', fallback: 'Hide Main' },
-        { key: 'trayShowMain', label: 'Tray Menu - Show Main', fallback: 'Show Main' },
-        { key: 'trayHideMain', label: 'Tray Menu - Hide Main', fallback: 'Hide Main' },
-        { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit' },
-        { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button' },
-        { key: 'errorNoActiveItems', label: 'No Active Items Error', fallback: 'No active items available' },
-        { key: 'errorRecordFailed', label: 'Record Failed Error', fallback: 'Failed to record selection' },
-        { key: 'errorFloatingWindow', label: 'Floating Window Error', fallback: 'Failed to toggle floating window' },
-        { key: 'errorToggleWindow', label: 'Toggle Window Error', fallback: 'Failed to toggle main window' },
+        { key: 'windowTitle', label: 'Window Title (System Title Bar)', fallback: 'Random Selector', section: 'main' },
+        { key: 'appTitle', label: 'App Title (Main Display)', fallback: 'Random Selector', section: 'main' },
+        { key: 'btnStart', label: 'Start Button', fallback: 'Start', section: 'main' },
+        { key: 'btnStop', label: 'Stop Button', fallback: 'Stop', section: 'main' },
+        { key: 'btnAuto', label: 'Auto Button', fallback: 'Auto', section: 'main' },
+        { key: 'btnShowFloat', label: 'Show Float Button', fallback: 'Show Float', section: 'main' },
+        { key: 'btnHideFloat', label: 'Hide Float Button', fallback: 'Hide Float', section: 'main' },
+        { key: 'btnToggleMain', label: 'Toggle Main Button', fallback: 'Toggle Main', section: 'main' },
+        { key: 'trayToggleMain', label: 'Tray Menu - Toggle Main', fallback: 'Toggle Main', section: 'tray' },
+        { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit', section: 'tray' },
+        { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button', section: 'other' },
+        { key: 'errorNoActiveItems', label: 'No Active Items Error', fallback: 'No active items available', section: 'other' },
+        { key: 'errorRecordFailed', label: 'Record Failed Error', fallback: 'Failed to record selection', section: 'other' },
+        { key: 'errorFloatingWindow', label: 'Floating Window Error', fallback: 'Failed to toggle floating window', section: 'other' },
+        { key: 'errorToggleWindow', label: 'Toggle Window Error', fallback: 'Failed to toggle main window', section: 'other' },
       ] as any[],
     };
   },
@@ -101,6 +101,15 @@ export default {
     passwordModalTitle() {
       if (this.pendingPasswordChange) return 'Change Password';
       return this.hasPassword ? 'Change Password' : 'Set Password';
+    },
+    mainInterfaceFields() {
+      return this.customTextFields.filter(f => f.section === 'main');
+    },
+    trayIconFields() {
+      return this.customTextFields.filter(f => f.section === 'tray');
+    },
+    otherFields() {
+      return this.customTextFields.filter(f => f.section === 'other');
     }
   },
   watch: {
@@ -115,11 +124,14 @@ export default {
       this.items = await getAllItems();
       this.history = await getHistory(50);
       const duration = await getSetting('autoDuration');
-      if (duration) this.autoDuration = parseInt(duration) || 3000;
+      if (duration) this.autoDuration = parseInt(duration) || 2000;
+      this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
       
       this.originalItems = JSON.parse(JSON.stringify(this.items));
       this.originalHistory = JSON.parse(JSON.stringify(this.history));
-      this.originalAutoDuration = this.autoDuration;
+       this.originalAutoDuration = this.autoDuration;
+       this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
+      this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
       this.pendingAdds = [];
       this.pendingDeletes = [];
       this.pendingEdits = [];
@@ -205,9 +217,10 @@ export default {
       const hasEdits = this.pendingEdits.length > 0;
       const hasHistoryClear = this.pendingHistoryClear;
       const hasDurationChange = this.autoDuration !== this.originalAutoDuration;
+      const hasAlwaysOnTopChange = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
       const hasCustomTextsChange = JSON.stringify(this.customTexts) !== JSON.stringify(this.originalCustomTexts);
       const hasPasswordChange = this.pendingPasswordChange;
-      this.isDirty = hasAdds || hasDeletes || hasEdits || hasHistoryClear || hasDurationChange || hasCustomTextsChange || hasPasswordChange;
+      this.isDirty = hasAdds || hasDeletes || hasEdits || hasHistoryClear || hasDurationChange || hasCustomTextsChange || hasPasswordChange || hasAlwaysOnTopChange;
     },
     async handleAddItem() {
       if (!this.newItemName.trim()) return;
@@ -469,8 +482,9 @@ export default {
         }
       }
       
-      await setSetting('autoDuration', this.autoDuration.toString());
-      await saveCustomTexts(this.customTexts);
+       await setSetting('autoDuration', this.autoDuration.toString());
+       await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
+       await saveCustomTexts(this.customTexts);
       
       await this.loadData(true);
       this.$emit('refresh');
@@ -523,7 +537,14 @@ export default {
     getLocalTime(utcString: string): string {
       if (!utcString) return '';
       try {
-        const date = new Date(utcString + ' UTC');
+        const date = new Date(utcString.replace(' ', 'T') + 'Z');
+        if (isNaN(date.getTime())) {
+          const date2 = new Date(utcString);
+          if (!isNaN(date2.getTime())) {
+            return date2.toLocaleString();
+          }
+          return utcString;
+        }
         return date.toLocaleString();
       } catch {
         return utcString;
@@ -568,6 +589,9 @@ export default {
         <a-form layout="vertical">
           <a-form-item label="Auto Duration (ms)">
             <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="500" style="width: 100%" />
+          </a-form-item>
+          <a-form-item label="Main Window Always On Top">
+            <a-switch v-model:checked="mainWindowAlwaysOnTop" @change="checkDirty" />
           </a-form-item>
         </a-form>
       </a-tab-pane>
@@ -698,9 +722,26 @@ export default {
       </a-tab-pane>
       <a-tab-pane key="customtexts" tab="Custom">
         <a-form layout="vertical">
-          <a-form-item v-for="field in customTextFields" :key="field.key" :label="field.label">
-            <a-input 
-              v-model:value="customTexts[field.key]" 
+          <a-divider orientation="left">Main Interface</a-divider>
+          <a-form-item v-for="field in mainInterfaceFields" :key="field.key" :label="field.label">
+            <a-input
+              v-model:value="customTexts[field.key]"
+              :placeholder="field.fallback"
+              @change="updateCustomText(field.key, customTexts[field.key])"
+            />
+          </a-form-item>
+          <a-divider orientation="left">Tray Icon</a-divider>
+          <a-form-item v-for="field in trayIconFields" :key="field.key" :label="field.label">
+            <a-input
+              v-model:value="customTexts[field.key]"
+              :placeholder="field.fallback"
+              @change="updateCustomText(field.key, customTexts[field.key])"
+            />
+          </a-form-item>
+          <a-divider orientation="left">Other</a-divider>
+          <a-form-item v-for="field in otherFields" :key="field.key" :label="field.label">
+            <a-input
+              v-model:value="customTexts[field.key]"
               :placeholder="field.fallback"
               @change="updateCustomText(field.key, customTexts[field.key])"
             />

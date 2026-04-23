@@ -4,7 +4,7 @@
       <span class="drag-icon">⋮⋮</span>
     </div>
     <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
-      {{ showMainInterface ? t('btnHideMain', 'Hide Main') : t('btnShowMain', 'Show Main') }}
+      {{ t('btnToggleMain', 'Toggle Main') }}
     </a-button>
   </div>
 </template>

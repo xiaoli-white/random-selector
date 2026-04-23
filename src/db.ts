@@ -312,5 +312,14 @@ export async function getFloatingWindowState(): Promise<boolean> {
 }
 
 export async function setFloatingWindowState(enabled: boolean): Promise<void> {
-  await setSetting('floating_window_enabled', enabled ? 'true' : 'false');
+    await setSetting('floating_window_enabled', enabled ? 'true' : 'false');
+}
+
+export async function getMainWindowAlwaysOnTop(): Promise<boolean> {
+    const stored = await getSetting('main_window_always_on_top');
+    return stored === 'true';
+}
+
+export async function setMainWindowAlwaysOnTop(enabled: boolean): Promise<void> {
+    await setSetting('main_window_always_on_top', enabled ? 'true' : 'false');
 }

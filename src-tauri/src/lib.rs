@@ -1,8 +1,11 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent, MouseButton},
     Manager,
 };
+
+static MAIN_WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
 
 #[tauri::command]
 fn get_exe_dir() -> String {
@@ -56,6 +59,7 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
     }
+    MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
     Ok(())
 }
 
@@ -64,6 +68,7 @@ async fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.hide().map_err(|e| e.to_string())?;
     }
+    MAIN_WINDOW_VISIBLE.store(false, Ordering::SeqCst);
     Ok(())
 }
 
@@ -76,24 +81,27 @@ async fn set_window_title(app: tauri::AppHandle, title: String) -> Result<(), St
 }
 
 #[tauri::command]
+async fn set_main_window_always_on_top(app: tauri::AppHandle, always_on_top: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
 }
 
 #[tauri::command]
-async fn update_tray_menu(app: tauri::AppHandle, show_main_text: String, quit_text: String, is_main_visible: bool) -> Result<(), String> {
+async fn update_tray_menu(app: tauri::AppHandle, toggle_text: String, quit_text: String) -> Result<(), String> {
     if let Some(tray) = app.tray_by_id("tauri") {
-        let menu_text = if is_main_visible {
-            show_main_text.replace("Show", "Hide").replace("打开", "隐藏")
-        } else {
-            show_main_text
-        };
-        let show_i = MenuItem::with_id(&app, "show_main", menu_text, true, None::<&str>)
+        let toggle_i = MenuItem::with_id(&app, "toggle_main", toggle_text, true, None::<&str>)
             .map_err(|e| e.to_string())?;
         let quit_i = MenuItem::with_id(&app, "quit", quit_text, true, None::<&str>)
             .map_err(|e| e.to_string())?;
-        let menu = Menu::with_items(&app, &[&show_i, &quit_i])
+        let menu = Menu::with_items(&app, &[&toggle_i, &quit_i])
             .map_err(|e| e.to_string())?;
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
@@ -101,12 +109,8 @@ async fn update_tray_menu(app: tauri::AppHandle, show_main_text: String, quit_te
 }
 
 #[tauri::command]
-async fn is_main_window_visible(app: tauri::AppHandle) -> Result<bool, String> {
-    if let Some(window) = app.get_webview_window("main") {
-        Ok(window.is_visible().map_err(|e| e.to_string())?)
-    } else {
-        Ok(false)
-    }
+async fn is_main_window_visible() -> Result<bool, String> {
+    Ok(MAIN_WINDOW_VISIBLE.load(Ordering::SeqCst))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -115,9 +119,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .setup(|app| {
-            let show_i = MenuItem::with_id(app, "show_main", "Show Main", true, None::<&str>)?;
+            let toggle_i = MenuItem::with_id(app, "toggle_main", "Toggle Main", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&toggle_i, &quit_i])?;
 
             let icon = app.default_window_icon().unwrap().clone();
             let _tray = TrayIconBuilder::new()
@@ -125,14 +129,16 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show_main" => {
+                    "toggle_main" => {
+                        let is_visible = MAIN_WINDOW_VISIBLE.load(Ordering::SeqCst);
                         if let Some(window) = app.get_webview_window("main") {
-                            let is_visible = window.is_visible().unwrap_or(false);
                             if is_visible {
                                 let _ = window.hide();
+                                MAIN_WINDOW_VISIBLE.store(false, Ordering::SeqCst);
                             } else {
                                 let _ = window.show();
                                 let _ = window.set_focus();
+                                MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
                             }
                         }
                     }
@@ -148,9 +154,16 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
+                        let is_visible = MAIN_WINDOW_VISIBLE.load(Ordering::SeqCst);
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            if is_visible {
+                                let _ = window.hide();
+                                MAIN_WINDOW_VISIBLE.store(false, Ordering::SeqCst);
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
+                            }
                         }
                     }
                 })
@@ -164,6 +177,7 @@ pub fn run() {
             show_main_window,
             hide_main_window,
             set_window_title,
+            set_main_window_always_on_top,
             quit_app,
             update_tray_menu,
             is_main_window_visible,
