@@ -4,20 +4,34 @@
       <span class="drag-icon">⋮⋮</span>
     </div>
     <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
-      {{ showMainInterface ? '隐藏主界面' : '显示主界面' }}
+      {{ showMainInterface ? t('btnHideMain', 'Hide Main') : t('btnShowMain', 'Show Main') }}
     </a-button>
   </div>
 </template>
 
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
+import { message } from 'ant-design-vue';
+import { getCustomTexts } from './db';
 
 export default {
   name: 'FloatingWindow',
   data() {
     return {
       showMainInterface: true,
+      customTexts: {} as Record<string, string>,
     };
+  },
+  computed: {
+    t() {
+      return (key: string, fallback: string) => this.customTexts[key] || fallback;
+    },
+  },
+  async mounted() {
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+    this.customTexts = await getCustomTexts();
   },
   methods: {
     async toggleMainInterface() {
@@ -29,7 +43,7 @@ export default {
         }
         this.showMainInterface = !this.showMainInterface;
       } catch (error) {
-        console.error('Failed to toggle main window:', error);
+        message.error(this.t('errorToggleWindow', 'Failed to toggle main window'));
       }
     },
   },

@@ -1,11 +1,12 @@
 import Database from '@tauri-apps/plugin-sql';
 import { invoke } from '@tauri-apps/api/core';
 
-export interface Student {
+export interface Item {
   id?: number;
   name: string;
   weight: number;
   selected_count: number;
+  disabled: number;
   created_at?: string;
 }
 
@@ -22,15 +23,20 @@ export async function initDatabase(): Promise<Database> {
   const dbPath = await invoke<string>('get_db_path');
   db = await Database.load(`sqlite:${dbPath}`);
   
+  await db.execute('PRAGMA journal_mode = DELETE');
+  
   await db.execute(`
     CREATE TABLE IF NOT EXISTS students (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       weight INTEGER DEFAULT 1,
       selected_count INTEGER DEFAULT 0,
+      disabled INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  
+  await db.execute(`ALTER TABLE students ADD COLUMN disabled INTEGER DEFAULT 0`).catch(() => {});
   
   await db.execute(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -59,12 +65,12 @@ export async function getDatabase(): Promise<Database> {
   return db;
 }
 
-export async function getAllStudents(): Promise<Student[]> {
+export async function getAllItems(): Promise<Item[]> {
   const database = await getDatabase();
-  return await database.select<Student[]>('SELECT * FROM students ORDER BY id');
+  return await database.select<Item[]>('SELECT * FROM students ORDER BY id');
 }
 
-export async function addStudent(name: string, weight: number = 1): Promise<{ success: boolean; error?: string }> {
+export async function addItem(name: string, weight: number = 1): Promise<{ success: boolean; error?: string }> {
   const database = await getDatabase();
   
   const existing = await database.select<{id: number}[]>(
@@ -73,7 +79,7 @@ export async function addStudent(name: string, weight: number = 1): Promise<{ su
   );
   
   if (existing.length > 0) {
-    return { success: false, error: '姓名已存在' };
+    return { success: false, error: 'Name already exists' };
   }
   
   const result = await database.select<{id: number}[]>('SELECT id FROM students ORDER BY id');
@@ -92,12 +98,12 @@ export async function addStudent(name: string, weight: number = 1): Promise<{ su
   return { success: true };
 }
 
-export async function updateStudentWeight(id: number, weight: number): Promise<void> {
+export async function updateItemWeight(id: number, weight: number): Promise<void> {
   const database = await getDatabase();
   await database.execute('UPDATE students SET weight = $1 WHERE id = $2', [weight, id]);
 }
 
-export async function updateStudentName(id: number, name: string): Promise<{ success: boolean; error?: string }> {
+export async function updateItemName(id: number, name: string): Promise<{ success: boolean; error?: string }> {
   const database = await getDatabase();
   
   const existing = await database.select<{id: number}[]>(
@@ -106,19 +112,24 @@ export async function updateStudentName(id: number, name: string): Promise<{ suc
   );
   
   if (existing.length > 0) {
-    return { success: false, error: '姓名已存在' };
+    return { success: false, error: 'Name already exists' };
   }
   
   await database.execute('UPDATE students SET name = $1 WHERE id = $2', [name, id]);
   return { success: true };
 }
 
-export async function deleteStudent(id: number): Promise<void> {
+export async function updateItemDisabled(id: number, disabled: number): Promise<void> {
+  const database = await getDatabase();
+  await database.execute('UPDATE students SET disabled = $1 WHERE id = $2', [disabled, id]);
+}
+
+export async function deleteItem(id: number): Promise<void> {
   const database = await getDatabase();
   await database.execute('DELETE FROM students WHERE id = $1', [id]);
 }
 
-export async function clearAllStudents(): Promise<void> {
+export async function clearAllItems(): Promise<void> {
   const database = await getDatabase();
   await database.execute('DELETE FROM history');
   await database.execute('DELETE FROM students');
@@ -143,7 +154,7 @@ export async function importFromText(text: string): Promise<{ success: boolean; 
     );
     
     if (existing.length > 0) {
-      errors.push(`"${name}" 已存在`);
+      errors.push(`"${name}" already exists`);
       continue;
     }
     
@@ -227,18 +238,70 @@ export async function resetHistory(): Promise<void> {
   await database.execute('UPDATE students SET selected_count = 0');
 }
 
-export function weightedRandomSelect(students: Student[]): Student | null {
-  if (students.length === 0) return null;
+export function weightedRandomSelect(items: Item[]): Item | null {
+  const activeItems = items.filter(i => !i.disabled);
+  if (activeItems.length === 0) return null;
   
-  const totalWeight = students.reduce((sum, s) => sum + s.weight, 0);
+  const totalWeight = activeItems.reduce((sum, s) => sum + s.weight, 0);
   let random = Math.random() * totalWeight;
   
-  for (const student of students) {
-    random -= student.weight;
+  for (const item of activeItems) {
+    random -= item.weight;
     if (random <= 0) {
-      return student;
+      return item;
     }
   }
   
-  return students[students.length - 1];
+  return activeItems[activeItems.length - 1];
+}
+
+export async function verifyPassword(input: string): Promise<boolean> {
+  const storedHash = await getSetting('admin_password_hash');
+  if (!storedHash) return false;
+  
+  try {
+    const salt = storedHash.slice(0, 8);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input + salt);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const inputHash = salt + hashHex;
+    return inputHash === storedHash;
+  } catch {
+    return false;
+  }
+}
+
+export async function setPassword(password: string): Promise<void> {
+  const salt = Array.from(new Uint8Array(crypto.getRandomValues(new Uint8Array(4))))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + salt);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const storedHash = salt + hashHex;
+  await setSetting('admin_password_hash', storedHash);
+}
+
+export async function hasPassword(): Promise<boolean> {
+  const hash = await getSetting('admin_password_hash');
+  return !!hash;
+}
+
+export async function saveCustomTexts(texts: Record<string, string>): Promise<void> {
+  await setSetting('custom_texts', JSON.stringify(texts));
+}
+
+export async function getCustomTexts(): Promise<Record<string, string>> {
+  const stored = await getSetting('custom_texts');
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }

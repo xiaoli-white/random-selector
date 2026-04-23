@@ -1,6 +1,7 @@
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
-import { initDatabase, getAllStudents, getHistory, getSetting, weightedRandomSelect, addHistoryRecord } from './db';
+import { message } from 'ant-design-vue';
+import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
 export default {
@@ -8,26 +9,40 @@ export default {
   components: { SettingsModal },
   data() {
     return {
-      students: [] as any[],
+      items: [] as Item[],
       history: [] as any[],
-      selectedStudent: null as any,
+      selectedItem: null as Item | null,
       isSelecting: false,
       isAutoSelecting: false,
       showSettings: false,
       showFloating: false,
       showMainInterface: true,
-      autoDuration: 5000,
+      autoDuration: 3000,
       intervalId: null as number | null,
       stopTimeoutId: null as number | null,
       animationFrame: null as number | null,
       isAnimating: false,
+      customTexts: {} as Record<string, string>,
     };
   },
+  computed: {
+    t() {
+      return (key: string, fallback: string) => this.customTexts[key] || fallback;
+    },
+    activeItems() {
+      return this.items.filter(i => !i.disabled);
+    },
+  },
   async mounted() {
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
     await initDatabase();
-    await this.loadStudents();
+    await this.loadCustomTexts();
+    await this.loadItems();
     await this.loadHistory();
     await this.loadSettings();
+    document.title = this.t('windowTitle', 'Random Selector');
   },
   beforeUnmount() {
     this.stopAutoSelect();
@@ -36,45 +51,59 @@ export default {
     }
   },
   methods: {
-    async loadStudents() {
-      this.students = await getAllStudents();
+    async loadCustomTexts() {
+      this.customTexts = await getCustomTexts();
+      const title = this.t('windowTitle', 'Random Selector');
+      document.title = title;
+      try {
+        await invoke('set_window_title', { title });
+      } catch (e) {
+        console.error('Failed to set window title:', e);
+      }
+    },
+    async loadItems() {
+      this.items = await getAllItems();
     },
     async loadHistory() {
       this.history = await getHistory(50);
     },
     async loadSettings() {
       const duration = await getSetting('autoDuration');
-      if (duration) this.autoDuration = parseInt(duration) || 5000;
+      if (duration) this.autoDuration = parseInt(duration) || 3000;
     },
-    getRandomStudentPreview() {
-      if (this.students.length === 0) return null;
-      return weightedRandomSelect(this.students);
+    getRandomItemPreview() {
+      if (this.activeItems.length === 0) return null;
+      return weightedRandomSelect(this.items);
     },
-    async recordSelectedStudent() {
-      if (this.students.length === 0) return;
-      const selected = weightedRandomSelect(this.students);
-      if (selected) {
-        await addHistoryRecord(selected.id!, selected.name);
-        this.selectedStudent = selected;
+    async recordSelectedItem() {
+      if (!this.selectedItem) return;
+      try {
+        await addHistoryRecord(this.selectedItem.id!, this.selectedItem.name);
+        this.selectedItem = weightedRandomSelect(this.items);
         await this.loadHistory();
-        await this.loadStudents();
+        await this.loadItems();
+      } catch (error) {
+        message.error(this.t('errorRecordFailed', 'Failed to record selection'));
       }
     },
     startManualSelect() {
-      if (this.students.length === 0) return;
+      if (this.activeItems.length === 0) {
+        message.warning(this.t('errorNoActiveItems', 'No active items available'));
+        return;
+      }
       this.isSelecting = true;
       this.startAnimation();
     },
     stopManualSelect() {
       this.stopAnimation();
-      this.recordSelectedStudent();
+      this.recordSelectedItem();
       this.isSelecting = false;
     },
     startAnimation() {
       this.isAnimating = true;
       const animate = () => {
         if (!this.isAnimating) return;
-        this.selectedStudent = this.getRandomStudentPreview();
+        this.selectedItem = this.getRandomItemPreview();
         const delay = Math.random() * 100 + 100;
         this.animationFrame = requestAnimationFrame(() => setTimeout(animate, delay));
       };
@@ -88,31 +117,37 @@ export default {
       }
     },
     async startAutoSelect() {
-      if (this.students.length === 0) return;
+      if (this.activeItems.length === 0) {
+        message.warning(this.t('errorNoActiveItems', 'No active items available'));
+        return;
+      }
       this.isAutoSelecting = true;
-      this.updatePreview();
       
-      const scheduleNext = () => {
-        if (!this.isAutoSelecting || this.students.length === 0) return;
-        this.updatePreview();
-        const delay = Math.random() * 100 + 100;
-        this.intervalId = window.setTimeout(scheduleNext, delay) as unknown as number;
+      const startTime = performance.now();
+      const intervalDelay = 100;
+      
+      const updatePreview = () => {
+        if (this.activeItems.length === 0) return;
+        const preview = this.getRandomItemPreview();
+        if (preview) {
+          this.selectedItem = { ...preview };
+        }
       };
       
-      const initialDelay = Math.random() * 100 + 100;
-      this.intervalId = window.setTimeout(scheduleNext, initialDelay) as unknown as number;
+      const tick = () => {
+        if (!this.isAutoSelecting) return;
+        updatePreview();
+        const elapsed = performance.now() - startTime;
+        if (elapsed < this.autoDuration - intervalDelay) {
+          this.intervalId = window.setTimeout(tick, intervalDelay) as unknown as number;
+        } else {
+          updatePreview();
+          this.stopAutoSelect();
+        }
+      };
       
-      this.stopTimeoutId = setTimeout(() => {
-        this.stopAutoSelect();
-      }, this.autoDuration) as unknown as number;
-    },
-    updatePreview() {
-      if (this.students.length === 0) return;
-      const preview = this.getRandomStudentPreview();
-      if (preview) {
-        this.selectedStudent = { ...preview };
-        this.$forceUpdate();
-      }
+      updatePreview();
+      this.intervalId = window.setTimeout(tick, intervalDelay) as unknown as number;
     },
     stopAutoSelect() {
       this.isAutoSelecting = false;
@@ -120,11 +155,7 @@ export default {
         clearTimeout(this.intervalId);
         this.intervalId = null;
       }
-      if (this.stopTimeoutId) {
-        clearTimeout(this.stopTimeoutId);
-        this.stopTimeoutId = null;
-      }
-      this.recordSelectedStudent();
+      this.recordSelectedItem();
     },
     showMain() {
       this.showMainInterface = true;
@@ -138,11 +169,15 @@ export default {
         }
         this.showFloating = !this.showFloating;
       } catch (error) {
-        console.error('Failed to toggle floating window:', error);
+        message.error(this.t('errorFloatingWindow', 'Failed to toggle floating window'));
       }
     },
     toggleMainInterface() {
       this.showMainInterface = !this.showMainInterface;
+    },
+    async onSettingsRefresh() {
+      await this.loadItems();
+      await this.loadCustomTexts();
     },
   },
 };
@@ -155,25 +190,25 @@ export default {
         <div class="main-area">
           <a-card>
             <template #title>
-              <span class="card-title" @click="showSettings = true">随机点名器</span>
+              <span class="card-title" @click="showSettings = true">{{ t('appTitle', 'Random Selector') }}</span>
             </template>
             <div class="result-display">
               <a-typography-title :level="1">
-                {{ selectedStudent ? selectedStudent.name : '请点击“开始抽取”按钮' }}
+                {{ selectedItem ? selectedItem.name : t('hintText', 'Click "Start" button') }}
               </a-typography-title>
             </div>
             <div class="select-actions">
-              <a-button v-if="!isSelecting" type="primary" size="large" @click="startManualSelect" :disabled="students.length === 0" class="large-button">
-                开始抽取
+              <a-button v-if="!isSelecting" type="primary" size="large" @click="startManualSelect" :disabled="activeItems.length === 0" class="large-button">
+                {{ t('btnStart', 'Start') }}
               </a-button>
               <a-button v-else type="primary" danger size="large" @click="stopManualSelect" class="large-button">
-                停止抽取
+                {{ t('btnStop', 'Stop') }}
               </a-button>
-              <a-button type="primary" size="large" @click="startAutoSelect" :disabled="students.length === 0 || isAutoSelecting" class="large-button">
-                自动抽取
+              <a-button type="primary" size="large" @click="startAutoSelect" :disabled="activeItems.length === 0 || isAutoSelecting" class="large-button">
+                {{ t('btnAuto', 'Auto') }}
               </a-button>
               <a-button @click="toggleFloating" type="primary" size="large" class="large-button">
-                {{ showFloating ? '隐藏悬浮窗' : '显示悬浮窗' }}
+                {{ showFloating ? t('btnHideFloat', 'Hide Float') : t('btnShowFloat', 'Show Float') }}
               </a-button>
             </div>
           </a-card>
@@ -181,7 +216,7 @@ export default {
       </a-layout-content>
     </a-layout>
 
-    <SettingsModal v-model:open="showSettings" @refresh="loadStudents" />
+    <SettingsModal v-model:open="showSettings" @refresh="onSettingsRefresh" />
   </div>
 </template>
 
@@ -288,7 +323,7 @@ body {
   font-weight: 500;
 }
 
-.students-card {
+.items-card {
   margin-top: 0;
 }
 

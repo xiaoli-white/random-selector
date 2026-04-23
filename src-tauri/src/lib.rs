@@ -1,5 +1,4 @@
 use tauri::Manager;
-use std::fs;
 
 #[tauri::command]
 fn get_exe_dir() -> String {
@@ -63,6 +62,14 @@ async fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn set_window_title(app: tauri::AppHandle, title: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_title(&title).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -73,6 +80,7 @@ pub fn run() {
             hide_floating_window,
             show_main_window,
             hide_main_window,
+            set_window_title,
             get_exe_dir,
             get_db_path
         ])
