@@ -73,6 +73,7 @@ export default {
         { key: 'btnShowMain', label: 'Show Main Button', fallback: 'Show Main' },
         { key: 'btnHideMain', label: 'Hide Main Button', fallback: 'Hide Main' },
         { key: 'trayShowMain', label: 'Tray Menu - Show Main', fallback: 'Show Main' },
+        { key: 'trayHideMain', label: 'Tray Menu - Hide Main', fallback: 'Hide Main' },
         { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit' },
         { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button' },
         { key: 'errorNoActiveItems', label: 'No Active Items Error', fallback: 'No active items available' },

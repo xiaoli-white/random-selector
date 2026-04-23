@@ -45,6 +45,7 @@ export default {
     await this.loadSettings();
     await this.restoreFloatingWindowState();
     await this.setupWindowCloseHandler();
+    this.setupVisibilityWatcher();
   },
   beforeUnmount() {
     this.stopAutoSelect();
@@ -60,12 +61,24 @@ export default {
       document.title = title;
       try {
         await invoke('set_window_title', { title });
-        await invoke('update_tray_menu', { 
-          showMainText: this.t('trayShowMain', 'Show Main'),
-          quitText: this.t('trayQuit', 'Quit')
-        });
+        await this.updateTrayMenu();
       } catch (e) {
         console.error('Failed to set window title:', e);
+      }
+    },
+    async updateTrayMenu() {
+      try {
+        const isVisible = await invoke('is_main_window_visible');
+        const showMainText = isVisible 
+          ? this.t('trayHideMain', 'Hide Main')
+          : this.t('trayShowMain', 'Show Main');
+        await invoke('update_tray_menu', { 
+          showMainText,
+          quitText: this.t('trayQuit', 'Quit'),
+          isMainVisible: isVisible
+        });
+      } catch (e) {
+        console.error('Failed to update tray menu:', e);
       }
     },
     async restoreFloatingWindowState() {
@@ -83,7 +96,39 @@ export default {
         event.preventDefault();
         this.saveFloatingWindowState();
         await invoke('hide_main_window');
+        setTimeout(() => this.updateTrayMenu(), 100);
       });
+    },
+    setupVisibilityWatcher() {
+      const appWindow = getCurrentWindow();
+      const checkVisibility = async () => {
+        await this.updateTrayMenu();
+      };
+      appWindow.onFocusChanged(async ({ payload }) => {
+        if (payload) {
+          await checkVisibility();
+        }
+      }).then((unlisten) => {
+        setTimeout(() => {
+          if (unlisten) unlisten();
+        }, 30000);
+      });
+      setInterval(() => {
+        this.updateTrayMenu();
+      }, 1000);
+    },
+    async toggleFloating() {
+      try {
+        if (this.showFloating) {
+          await invoke('hide_floating_window');
+        } else {
+          await invoke('show_floating_window');
+        }
+        this.showFloating = !this.showFloating;
+        this.saveFloatingWindowState();
+      } catch (error) {
+        message.error(this.t('errorFloatingWindow', 'Failed to toggle floating window'));
+      }
     },
     async loadItems() {
       this.items = await getAllItems();
@@ -183,21 +228,17 @@ export default {
     },
     showMain() {
       this.showMainInterface = true;
-    },
-    async toggleFloating() {
-      try {
-        if (this.showFloating) {
-          await invoke('hide_floating_window');
-        } else {
-          await invoke('show_floating_window');
-        }
-        this.showFloating = !this.showFloating;
-      } catch (error) {
-        message.error(this.t('errorFloatingWindow', 'Failed to toggle floating window'));
-      }
+      invoke('show_main_window');
+      setTimeout(() => this.updateTrayMenu(), 100);
     },
     toggleMainInterface() {
       this.showMainInterface = !this.showMainInterface;
+      if (this.showMainInterface) {
+        invoke('show_main_window');
+      } else {
+        invoke('hide_main_window');
+      }
+      setTimeout(() => this.updateTrayMenu(), 100);
     },
     async onSettingsRefresh() {
       await this.loadItems();
