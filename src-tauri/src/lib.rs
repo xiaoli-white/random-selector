@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent, MouseButton},
-    Manager,
+    Manager, Emitter,
 };
 
 static MAIN_WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
@@ -26,16 +26,14 @@ fn get_db_path() -> String {
 async fn show_floating_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("floating") {
         window.show().map_err(|e| e.to_string())?;
-        #[cfg(target_os = "windows")]
-        window.set_focus().map_err(|e| e.to_string())?;
     } else {
         tauri::WebviewWindowBuilder::new(
             &app,
             "floating",
             tauri::WebviewUrl::App("floating.html".into())
         )
-        .title("悬浮窗")
-        .inner_size(160.0, 40.0)
+        .title("Floating")
+        .inner_size(190.0, 48.0)
         .resizable(false)
         .decorations(false)
         .transparent(true)
@@ -57,10 +55,6 @@ async fn hide_floating_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(floating) = app.get_webview_window("floating") {
-        let _ = floating.hide();
-    }
-    
     if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
@@ -75,17 +69,6 @@ async fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
         window.hide().map_err(|e| e.to_string())?;
     }
     MAIN_WINDOW_VISIBLE.store(false, Ordering::SeqCst);
-    
-    // Windows 平台特殊处理：确保主窗口隐藏后释放焦点
-    // 这样其他窗口（包括悬浮窗）可以正常接收焦点
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(floating) = app.get_webview_window("floating") {
-            // 如果悬浮窗存在且已启用，确保它获得焦点
-            let _ = floating.set_focus();
-        }
-    }
-    
     Ok(())
 }
 
@@ -128,6 +111,12 @@ async fn update_tray_menu(app: tauri::AppHandle, toggle_text: String, quit_text:
 #[tauri::command]
 async fn is_main_window_visible() -> Result<bool, String> {
     Ok(MAIN_WINDOW_VISIBLE.load(Ordering::SeqCst))
+}
+
+#[tauri::command]
+async fn emit_custom_texts_updated(app: tauri::AppHandle) -> Result<(), String> {
+    app.emit("custom-texts-updated", ()).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -199,7 +188,8 @@ pub fn run() {
             update_tray_menu,
             is_main_window_visible,
             get_exe_dir,
-            get_db_path
+            get_db_path,
+            emit_custom_texts_updated
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

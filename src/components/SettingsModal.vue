@@ -1,8 +1,9 @@
 <script lang="ts">
+import { invoke } from '@tauri-apps/api/core';
 import { message } from 'ant-design-vue';
-import { 
-  getAllItems, getHistory, getSetting, setSetting, 
-  addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem, 
+import {
+  getAllItems, getHistory, getSetting, setSetting,
+  addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem,
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop
 } from '../db';
@@ -74,7 +75,7 @@ export default {
         { key: 'btnAuto', label: 'Auto Button', fallback: 'Auto', section: 'main' },
         { key: 'btnShowFloat', label: 'Show Float Button', fallback: 'Show Float', section: 'main' },
         { key: 'btnHideFloat', label: 'Hide Float Button', fallback: 'Hide Float', section: 'main' },
-        { key: 'btnToggleMain', label: 'Toggle Main Button', fallback: 'Toggle Main', section: 'main' },
+        { key: 'btnToggleMain', label: 'Toggle Main Button', fallback: 'Toggle Main', section: 'window' },
         { key: 'trayToggleMain', label: 'Tray Menu - Toggle Main', fallback: 'Toggle Main', section: 'tray' },
         { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit', section: 'tray' },
         { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button', section: 'other' },
@@ -106,6 +107,9 @@ export default {
     },
     mainInterfaceFields() {
       return this.customTextFields.filter(f => f.section === 'main');
+    },
+    windowControlFields() {
+      return this.customTextFields.filter(f => f.section === 'window');
     },
     trayIconFields() {
       return this.customTextFields.filter(f => f.section === 'tray');
@@ -485,15 +489,15 @@ export default {
         this.pendingRemovePassword = false;
         this.pendingNewPassword = '';
       }
-      
+
       if (this.pendingHistoryClear) {
         await resetHistory();
       }
-      
+
       for (const id of this.pendingDeletes) {
         await deleteItem(id);
       }
-      
+
       for (const item of this.pendingAdds) {
         await addItem(item.name, item.weight);
         if (item.disabled) {
@@ -504,7 +508,7 @@ export default {
           }
         }
       }
-      
+
       for (const edit of this.pendingEdits) {
         if (edit.name !== undefined) {
           await updateItemName(edit.id, edit.name);
@@ -516,13 +520,30 @@ export default {
           await updateItemDisabled(edit.id, edit.disabled);
         }
       }
-      
+
        await setSetting('autoDuration', this.autoDuration.toString());
+       
+       const alwaysOnTopChanged = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
        await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
+       if (alwaysOnTopChanged) {
+         try {
+           await invoke('set_main_window_always_on_top', { alwaysOnTop: this.mainWindowAlwaysOnTop });
+         } catch (e) {
+           console.error('Failed to apply always on top:', e);
+         }
+       }
+       
        await saveCustomTexts(this.customTexts);
 
       await this.loadData();
       this.$emit('refresh');
+
+      try {
+        await invoke('emit_custom_texts_updated');
+      } catch (e) {
+        console.error('Failed to emit custom texts updated event:', e);
+      }
+
       message.success('Saved successfully');
     },
     openPasswordSettings() {
@@ -764,6 +785,14 @@ export default {
         <a-form layout="vertical">
           <a-divider orientation="left">Main Interface</a-divider>
           <a-form-item v-for="field in mainInterfaceFields" :key="field.key" :label="field.label">
+            <a-input
+              v-model:value="customTexts[field.key]"
+              :placeholder="field.fallback"
+              @change="updateCustomText(field.key, customTexts[field.key])"
+            />
+          </a-form-item>
+          <a-divider orientation="left">Floating Window</a-divider>
+          <a-form-item v-for="field in windowControlFields" :key="field.key" :label="field.label">
             <a-input
               v-model:value="customTexts[field.key]"
               :placeholder="field.fallback"

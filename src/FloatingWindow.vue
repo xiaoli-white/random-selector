@@ -11,6 +11,7 @@
 
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { message } from 'ant-design-vue';
 import { getCustomTexts } from './db';
 
@@ -31,9 +32,16 @@ export default {
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
-    this.customTexts = await getCustomTexts();
+    await this.loadCustomTexts();
+    
+    await listen('custom-texts-updated', async () => {
+      await this.loadCustomTexts();
+    });
   },
   methods: {
+    async loadCustomTexts() {
+      this.customTexts = await getCustomTexts();
+    },
     async toggleMainInterface() {
       try {
         if (this.showMainInterface) {
@@ -82,7 +90,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: move;
+  -webkit-app-region: drag;
   background: rgba(0, 0, 0, 0.05);
   border-radius: 8px 0 0 8px;
 }
