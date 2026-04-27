@@ -14,10 +14,10 @@
       {
         "title": "random-selector",
         "label": "main",
-        "width": 900,
-        "height": 700,
+        "width": 700,
+        "height": 375,
         "minWidth": 700,
-        "minHeight": 400,
+        "minHeight": 375,
         "resizable": true,
         "fullscreen": false,
         "center": true
