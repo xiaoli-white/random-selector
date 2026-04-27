@@ -679,7 +679,7 @@ export default {
             <a-button type="primary" @click="handleAddItem">Add</a-button>
           </a-form-item>
         </a-form>
-        <a-table :dataSource="items" :columns="itemColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
+        <a-table :dataSource="items" :columns="itemColumns" row-key="id" size="small">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'id'">
               <span v-if="(record as any).isNew" style="color: #bfbfbf;">—</span>
