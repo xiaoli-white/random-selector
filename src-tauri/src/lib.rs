@@ -124,6 +124,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 当尝试打开第二个实例时，只显示主窗口，不影响悬浮窗
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
+        }))
         .setup(|app| {
             let toggle_i = MenuItem::with_id(app, "toggle_main", "Toggle Main", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
