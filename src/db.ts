@@ -135,43 +135,61 @@ export async function clearAllItems(): Promise<void> {
   await database.execute('DELETE FROM students');
 }
 
-export async function importFromText(text: string): Promise<{ success: boolean; count: number; errors: string[] }> {
-  const database = await getDatabase();
+export async function importFromText(text: string): Promise<{ success: boolean; count: number; errors: string[]; items: Array<{name: string, weight: number}> }> {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  let count = 0;
+  const items: Array<{name: string, weight: number}> = [];
   const errors: string[] = [];
-  
+
   for (const line of lines) {
     const parts = line.split(/[,\t]/);
     const name = parts[0].trim();
     const weight = parts.length > 1 ? parseInt(parts[1]) || 1 : 1;
-    
+
     if (!name) continue;
-    
-    const existing = await database.select<{id: number}[]>(
-      'SELECT id FROM students WHERE name = $1',
-      [name]
-    );
-    
-    if (existing.length > 0) {
-      errors.push(`"${name}" already exists`);
+
+    // Check if name already exists in the parsed items
+    if (items.some(i => i.name === name)) {
+      errors.push(`"${name}" duplicate in import`);
       continue;
     }
-    
+
+    items.push({ name, weight });
+  }
+
+  return { success: errors.length === 0, count: items.length, errors, items };
+}
+
+export async function importFromTextToDb(text: string): Promise<{ success: boolean; count: number; errors: string[] }> {
+  const database = await getDatabase();
+  const { items, errors: parseErrors } = await importFromText(text);
+  let count = 0;
+  const errors = [...parseErrors];
+
+  for (const item of items) {
+    const existing = await database.select<{id: number}[]>(
+      'SELECT id FROM students WHERE name = $1',
+      [item.name]
+    );
+
+    if (existing.length > 0) {
+      errors.push(`"${item.name}" already exists`);
+      continue;
+    }
+
     const result = await database.select<{id: number}[]>('SELECT id FROM students ORDER BY id');
     let nextId = 1;
     for (const row of result) {
       if (row.id !== nextId) break;
       nextId++;
     }
-    
+
     await database.execute(
       'INSERT INTO students (id, name, weight) VALUES ($1, $2, $3)',
-      [nextId, name, weight]
+      [nextId, item.name, item.weight]
     );
     count++;
   }
-  
+
   return { success: errors.length === 0, count, errors };
 }
 

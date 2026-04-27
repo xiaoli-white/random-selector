@@ -350,14 +350,28 @@ export default {
       reader.onload = async (e) => {
         const text = e.target?.result as string;
         const result = await importFromText(text);
-        if (result.errors.length > 0) {
-          message.warning(`Imported ${result.count}, partial failed: ${result.errors.join(', ')}`);
+        if (result.items.length === 0) {
+          message.warning('No valid items found in file');
         } else {
-          message.success(`Successfully imported ${result.count} items`);
+          let count = 0;
+          for (const item of result.items) {
+            const exists = this.items.some(i => i.name === item.name) || this.pendingAdds.some(a => a.name === item.name);
+            if (exists) continue;
+
+            const tempId = Date.now() + count;
+            this.pendingAdds.push({ id: tempId, name: item.name, weight: item.weight, selected_count: 0, disabled: 0 });
+            this.items.push({ id: tempId, name: item.name, weight: item.weight, selected_count: 0, disabled: 0, isNew: true });
+            count++;
+          }
+          if (result.errors.length > 0) {
+            message.warning(`Added ${count} items, skipped: ${result.errors.join(', ')}`);
+          } else {
+            message.success(`Added ${count} items to pending list`);
+          }
+          this.checkDirty();
         }
         this.importText = '';
         this.showImport = false;
-        await this.loadData();
       };
       reader.readAsText(file);
       return false;
