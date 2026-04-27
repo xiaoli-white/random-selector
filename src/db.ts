@@ -256,33 +256,36 @@ export function weightedRandomSelect(items: Item[]): Item | null {
 }
 
 export async function verifyPassword(input: string): Promise<boolean> {
-  const storedHash = await getSetting('admin_password_hash');
-  if (!storedHash) return false;
-  
+  const stored = await getSetting('admin_password_hash');
+  if (!stored) return false;
+
   try {
-    const salt = storedHash.slice(0, 8);
+    const salt = stored.substring(0, 8);
+    const expectedHash = stored.substring(8);
+
     const encoder = new TextEncoder();
     const data = encoder.encode(input + salt);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    const inputHash = salt + hashHex;
-    return inputHash === storedHash;
+    const inputHash = Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    return inputHash === expectedHash;
   } catch {
     return false;
   }
 }
 
 export async function setPassword(password: string): Promise<void> {
-  const salt = Array.from(new Uint8Array(crypto.getRandomValues(new Uint8Array(4))))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
+  const saltBytes = crypto.getRandomValues(new Uint8Array(4));
+  const salt = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
   const encoder = new TextEncoder();
   const data = encoder.encode(password + salt);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  const storedHash = salt + hashHex;
-  await setSetting('admin_password_hash', storedHash);
+  const hash = Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+
+  await setSetting('admin_password_hash', salt + hash);
 }
 
 export async function hasPassword(): Promise<boolean> {

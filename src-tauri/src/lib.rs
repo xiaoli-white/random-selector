@@ -55,6 +55,10 @@ async fn hide_floating_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(floating) = app.get_webview_window("floating") {
+        let _ = floating.hide();
+    }
+    
     if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;

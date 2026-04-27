@@ -5,6 +5,10 @@ import { message } from 'ant-design-vue';
 import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
+interface SettingsModalInstance {
+  openSettingsPanel: () => Promise<void>;
+}
+
 export default {
   name: 'App',
   components: { SettingsModal },
@@ -35,9 +39,11 @@ export default {
     },
   },
   async mounted() {
+    /*
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
+    */
     await initDatabase();
     await this.loadCustomTexts();
     await this.loadItems();
@@ -257,7 +263,7 @@ export default {
         <div class="main-area">
           <a-card>
             <template #title>
-              <span class="card-title" @click="showSettings = true">{{ t('appTitle', 'Random Selector') }}</span>
+              <span class="card-title" @click="($refs.settingsModal as SettingsModalInstance)?.openSettingsPanel()">{{ t('appTitle', 'Random Selector') }}</span>
             </template>
             <div class="result-display">
               <a-typography-title :level="1">
@@ -283,7 +289,7 @@ export default {
       </a-layout-content>
     </a-layout>
 
-    <SettingsModal v-model:open="showSettings" @refresh="onSettingsRefresh" />
+    <SettingsModal ref="settingsModal" v-model:open="showSettings" @refresh="onSettingsRefresh" />
   </div>
 </template>
 

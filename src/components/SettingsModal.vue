@@ -55,6 +55,7 @@ export default {
       showPasswordModal: false,
       passwordInput: '',
       passwordError: '',
+      passwordCallback: null as ((success: boolean) => void) | null,
       hasPassword: false,
       currentPassword: '',
       newPassword: '',
@@ -62,6 +63,7 @@ export default {
       showPasswordSettings: false,
       pendingPasswordChange: false,
       pendingRemovePassword: false,
+      pendingNewPassword: '',
       customTexts: {} as Record<string, string>,
       originalCustomTexts: {} as Record<string, string>,
       customTextFields: [
@@ -113,14 +115,14 @@ export default {
     }
   },
   watch: {
-    open(val) {
+    async open(val) {
       if (val) {
-        this.loadData(false);
+        this.loadData();
       }
     }
   },
   methods: {
-    async loadData(skipPassword: boolean) {
+    async loadData() {
       this.items = await getAllItems();
       this.history = await getHistory(50);
       const duration = await getSetting('autoDuration');
@@ -149,59 +151,59 @@ export default {
       });
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
-      
+
       this.pendingPasswordChange = false;
       this.pendingRemovePassword = false;
       this.currentPassword = '';
       this.newPassword = '';
       this.confirmPassword = '';
-      
-      if (!skipPassword && this.hasPassword) {
-        this.visible = false;
-        this.showPasswordModal = true;
-        this.passwordInput = '';
-        this.passwordError = '';
-      }
     },
-    async checkPasswordAndOpen(): Promise<boolean> {
+    async openSettingsPanel(): Promise<void> {
       const hasPwd = await hasPassword();
-      if (!hasPwd && !this.pendingPasswordChange) return true;
-      
-      return new Promise((resolve) => {
-        this.showPasswordModal = true;
-        this.passwordInput = '';
-        this.passwordError = '';
-        
-        const check = async () => {
-          const valid = await verifyPassword(this.passwordInput);
-          if (valid) {
-            this.showPasswordModal = false;
-            this.passwordInput = '';
-            resolve(true);
-          } else {
-            this.passwordError = 'Incorrect password';
-            resolve(false);
+      if (!hasPwd) {
+        this.visible = true;
+        return;
+      }
+
+      this.showPasswordModal = true;
+      this.passwordInput = '';
+      this.passwordError = '';
+
+      return new Promise<void>((resolve) => {
+        this.passwordCallback = (success: boolean) => {
+          if (success) {
+            this.visible = true;
           }
+          resolve();
         };
-        check();
       });
     },
     async handlePasswordSubmit() {
-      const valid = await verifyPassword(this.passwordInput);
-      if (valid) {
+      if (!this.passwordInput) {
+        this.passwordError = 'Please enter password';
+        return;
+      }
+
+      const success = await verifyPassword(this.passwordInput);
+      if (success) {
         this.showPasswordModal = false;
         this.passwordInput = '';
         this.passwordError = '';
-        this.loadData(true);
-        this.visible = true;
+        if (this.passwordCallback) {
+          this.passwordCallback(true);
+          this.passwordCallback = null;
+        }
       } else {
         this.passwordError = 'Incorrect password';
       }
     },
-    async onTitleClick() {
-      const canOpen = await this.checkPasswordAndOpen();
-      if (canOpen) {
-        this.visible = true;
+    handlePasswordCancel() {
+      this.showPasswordModal = false;
+      this.passwordInput = '';
+      this.passwordError = '';
+      if (this.passwordCallback) {
+        this.passwordCallback(false);
+        this.passwordCallback = null;
       }
     },
     handleClose() {
@@ -351,7 +353,7 @@ export default {
         }
         this.importText = '';
         this.showImport = false;
-        await this.loadData(true);
+        await this.loadData();
       };
       reader.readAsText(file);
       return false;
@@ -394,28 +396,56 @@ export default {
       if (this.editingNameKey !== null) {
         if (!this.editName.trim()) {
           message.error('Name cannot be empty');
+          this.editingNameKey = null;
           return;
         }
         const item = this.items.find(i => i.id === this.editingNameKey);
-        if (item && !(item as any).isNew) {
-          this.pendingEdits.push({ id: this.editingNameKey, name: this.editName.trim() });
-        } else if (item) {
-          const idx = this.items.indexOf(item);
-          this.items.splice(idx, 1, { ...item, name: this.editName.trim() });
+        if (item) {
+          if ((item as any).isNew) {
+            const idx = this.items.indexOf(item);
+            const updated = { ...item, name: this.editName.trim() };
+            this.items.splice(idx, 1, updated);
+            const pending = this.pendingAdds.find(p => p.id === this.editingNameKey);
+            if (pending) pending.name = this.editName.trim();
+          } else {
+            const existingEdit = this.pendingEdits.find(e => e.id === this.editingNameKey);
+            if (existingEdit) {
+              existingEdit.name = this.editName.trim();
+            } else {
+              this.pendingEdits.push({ id: this.editingNameKey, name: this.editName.trim() });
+            }
+            const idx = this.items.indexOf(item);
+            const updated = { ...item, name: this.editName.trim() };
+            this.items.splice(idx, 1, updated);
+          }
         }
+        this.editingNameKey = null;
+        this.checkDirty();
       }
       if (this.editingWeightKey !== null) {
         const item = this.items.find(i => i.id === this.editingWeightKey);
-        if (item && !(item as any).isNew) {
-          this.pendingEdits.push({ id: this.editingWeightKey, weight: this.editWeight });
-        } else if (item) {
-          const idx = this.items.indexOf(item);
-          this.items.splice(idx, 1, { ...item, weight: this.editWeight });
+        if (item) {
+          if ((item as any).isNew) {
+            const idx = this.items.indexOf(item);
+            const updated = { ...item, weight: this.editWeight };
+            this.items.splice(idx, 1, updated);
+            const pending = this.pendingAdds.find(p => p.id === this.editingWeightKey);
+            if (pending) pending.weight = this.editWeight;
+          } else {
+            const existingEdit = this.pendingEdits.find(e => e.id === this.editingWeightKey);
+            if (existingEdit) {
+              existingEdit.weight = this.editWeight;
+            } else {
+              this.pendingEdits.push({ id: this.editingWeightKey, weight: this.editWeight });
+            }
+            const idx = this.items.indexOf(item);
+            const updated = { ...item, weight: this.editWeight };
+            this.items.splice(idx, 1, updated);
+          }
         }
+        this.editingWeightKey = null;
+        this.checkDirty();
       }
-      this.editingNameKey = null;
-      this.editingWeightKey = null;
-      this.checkDirty();
     },
     cancelEdits() {
       this.editingNameKey = null;
@@ -427,28 +457,33 @@ export default {
         if (!activeEl || !activeEl.closest('.ant-table')) {
           this.saveAllEdits();
         }
-      }, 150);
+      }, 200);
     },
     async handleSave() {
       const hasPwd = await hasPassword();
-      if (hasPwd || this.pendingPasswordChange) {
-        const canSave = await this.checkPasswordAndOpen();
-        if (!canSave) {
-          message.error('Password verification failed');
-          return;
-        }
+      if (hasPwd) {
+        const verified = await new Promise<boolean>((resolve) => {
+          this.showPasswordModal = true;
+          this.passwordInput = '';
+          this.passwordError = '';
+          this.passwordCallback = (success: boolean) => {
+            resolve(success);
+          };
+        });
+        if (!verified) return;
       }
-      
+
       if (this.pendingPasswordChange) {
         if (this.pendingRemovePassword) {
           await setSetting('admin_password_hash', '');
           this.hasPassword = false;
         } else {
-          await setPassword(this.newPassword);
+          await setPassword(this.pendingNewPassword);
           this.hasPassword = true;
         }
         this.pendingPasswordChange = false;
         this.pendingRemovePassword = false;
+        this.pendingNewPassword = '';
       }
       
       if (this.pendingHistoryClear) {
@@ -485,8 +520,8 @@ export default {
        await setSetting('autoDuration', this.autoDuration.toString());
        await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
        await saveCustomTexts(this.customTexts);
-      
-      await this.loadData(true);
+
+      await this.loadData();
       this.$emit('refresh');
       message.success('Saved successfully');
     },
@@ -514,6 +549,7 @@ export default {
           return;
         }
       }
+      this.pendingNewPassword = this.newPassword;
       this.pendingPasswordChange = true;
       this.currentPassword = '';
       this.newPassword = '';
@@ -624,6 +660,10 @@ export default {
         </a-form>
         <a-table :dataSource="items" :columns="itemColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
           <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'id'">
+              <span v-if="(record as any).isNew" style="color: #bfbfbf;">—</span>
+              <span v-else>{{ record.id }}</span>
+            </template>
             <template v-if="column.key === 'selected'">
               <a-checkbox :checked="isSelected(record.id)" @change="toggleSelection(record.id)" />
             </template>
@@ -758,7 +798,7 @@ export default {
     </div>
   </a-modal>
 
-  <a-modal v-model:open="showPasswordModal" title="Enter Password" @ok="handlePasswordSubmit" ok-text="OK" cancel-text="Cancel">
+  <a-modal v-model:open="showPasswordModal" title="Enter Password" @ok="handlePasswordSubmit" @cancel="handlePasswordCancel" ok-text="OK" cancel-text="Cancel" :getContainer="false" :zIndex="2000">
     <a-form layout="vertical">
       <a-form-item label="Password">
         <a-input-password v-model:value="passwordInput" placeholder="Enter password" @keyup.enter="handlePasswordSubmit" />
