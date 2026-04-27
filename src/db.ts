@@ -147,7 +147,6 @@ export async function importFromText(text: string): Promise<{ success: boolean; 
 
     if (!name) continue;
 
-    // Check if name already exists in the parsed items
     if (items.some(i => i.name === name)) {
       errors.push(`"${name}" duplicate in import`);
       continue;

@@ -182,10 +182,10 @@ export default {
     },
     startAnimation() {
       this.isAnimating = true;
+      const delay = 100;
       const animate = () => {
         if (!this.isAnimating) return;
         this.selectedItem = this.getRandomItemPreview();
-        const delay = Math.random() * 100 + 100;
         this.animationFrame = requestAnimationFrame(() => setTimeout(animate, delay));
       };
       animate();
