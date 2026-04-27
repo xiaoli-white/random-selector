@@ -39,11 +39,9 @@ export default {
     },
   },
   async mounted() {
-    /*
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
-    */
     await initDatabase();
     await this.loadCustomTexts();
     await this.loadItems();
@@ -96,6 +94,17 @@ export default {
       await appWindow.onCloseRequested(async (event) => {
         event.preventDefault();
         this.saveFloatingWindowState();
+        
+        // 如果悬浮窗已启用，先显示悬浮窗再隐藏主窗口
+        // 这样可以避免 Windows 上出现窗口闪烁或显示错误的问题
+        if (this.showFloating) {
+          try {
+            await invoke('show_floating_window');
+          } catch (e) {
+            console.error('Failed to show floating window:', e);
+          }
+        }
+        
         await invoke('hide_main_window');
         setTimeout(() => this.updateTrayMenu(), 100);
       });
@@ -236,14 +245,26 @@ export default {
     },
     showMain() {
       this.showMainInterface = true;
+      // 显示主窗口时隐藏悬浮窗
+      if (this.showFloating) {
+        invoke('hide_floating_window');
+      }
       invoke('show_main_window');
       setTimeout(() => this.updateTrayMenu(), 100);
     },
     toggleMainInterface() {
       this.showMainInterface = !this.showMainInterface;
       if (this.showMainInterface) {
+        // 显示主窗口时隐藏悬浮窗
+        if (this.showFloating) {
+          invoke('hide_floating_window');
+        }
         invoke('show_main_window');
       } else {
+        // 隐藏主窗口时，如果悬浮窗已启用则显示它
+        if (this.showFloating) {
+          invoke('show_floating_window');
+        }
         invoke('hide_main_window');
       }
       setTimeout(() => this.updateTrayMenu(), 100);

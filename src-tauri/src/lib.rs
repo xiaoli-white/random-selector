@@ -26,6 +26,8 @@ fn get_db_path() -> String {
 async fn show_floating_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("floating") {
         window.show().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "windows")]
+        window.set_focus().map_err(|e| e.to_string())?;
     } else {
         tauri::WebviewWindowBuilder::new(
             &app,
@@ -33,7 +35,7 @@ async fn show_floating_window(app: tauri::AppHandle) -> Result<(), String> {
             tauri::WebviewUrl::App("floating.html".into())
         )
         .title("悬浮窗")
-        .inner_size(200.0, 200.0)
+        .inner_size(160.0, 40.0)
         .resizable(false)
         .decorations(false)
         .transparent(true)
@@ -73,6 +75,17 @@ async fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
         window.hide().map_err(|e| e.to_string())?;
     }
     MAIN_WINDOW_VISIBLE.store(false, Ordering::SeqCst);
+    
+    // Windows 平台特殊处理：确保主窗口隐藏后释放焦点
+    // 这样其他窗口（包括悬浮窗）可以正常接收焦点
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(floating) = app.get_webview_window("floating") {
+            // 如果悬浮窗存在且已启用，确保它获得焦点
+            let _ = floating.set_focus();
+        }
+    }
+    
     Ok(())
 }
 
