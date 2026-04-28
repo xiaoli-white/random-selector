@@ -1,10 +1,10 @@
 <template>
-  <div class="floating-window">
-    <div class="drag-handle" data-tauri-drag-region>
+  <div class="floating-window" data-tauri-drag-region>
+    <div class="drag-handle">
       <span class="drag-icon">⋮⋮</span>
     </div>
     <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
-      {{ t('btnToggleMain', 'Toggle Main') }}
+      {{ toggleButtonText }}
     </a-button>
   </div>
 </template>
@@ -27,20 +27,35 @@ export default {
     t() {
       return (key: string, fallback: string) => this.customTexts[key] || fallback;
     },
+    toggleButtonText() {
+      return this.showMainInterface ? this.t('btnHideMain', 'Hide Main') : this.t('btnShowMain', 'Show Main');
+    },
   },
   async mounted() {
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
     await this.loadCustomTexts();
-    
+    await this.syncWindowState();
+
     await listen('custom-texts-updated', async () => {
       await this.loadCustomTexts();
+    });
+
+    await listen('window-state-changed', async () => {
+      await this.syncWindowState();
     });
   },
   methods: {
     async loadCustomTexts() {
       this.customTexts = await getCustomTexts();
+    },
+    async syncWindowState() {
+      try {
+        this.showMainInterface = await invoke('is_main_window_visible');
+      } catch (e) {
+        console.error('Failed to sync window state:', e);
+      }
     },
     async toggleMainInterface() {
       try {
@@ -68,6 +83,10 @@ export default {
 body {
   background: transparent;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  -webkit-app-region: drag;
 }
 
 .floating-window {
@@ -82,22 +101,25 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   overflow: hidden;
   user-select: none;
+  position: fixed;
+  top: 0;
+  left: 0;
 }
 
 .drag-handle {
-  width: 48px;
+  width: 32px;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  -webkit-app-region: drag;
   background: rgba(0, 0, 0, 0.05);
   border-radius: 8px 0 0 8px;
+  flex-shrink: 0;
 }
 
 .drag-icon {
   color: rgba(0, 0, 0, 0.3);
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: 2px;
   line-height: 1;
   pointer-events: none;
@@ -106,11 +128,12 @@ body {
 }
 
 .toggle-button {
-  width: calc(100% - 8px);
+  width: calc(100% - 32px);
   height: calc(100% - 8px);
-  margin: 4px;
+  margin: 4px 4px 4px 0;
   border: none;
   border-radius: 6px;
   font-size: 14px;
+  -webkit-app-region: no-drag;
 }
 </style>

@@ -67,6 +67,7 @@ export default {
       pendingNewPassword: '',
       customTexts: {} as Record<string, string>,
       originalCustomTexts: {} as Record<string, string>,
+      searchQuery: '',
       customTextFields: [
         { key: 'windowTitle', label: 'Window Title (System Title Bar)', fallback: 'Random Selector', section: 'main' },
         { key: 'appTitle', label: 'App Title (Main Display)', fallback: 'Random Selector', section: 'main' },
@@ -75,7 +76,8 @@ export default {
         { key: 'btnAuto', label: 'Auto Button', fallback: 'Auto', section: 'main' },
         { key: 'btnShowFloat', label: 'Show Float Button', fallback: 'Show Float', section: 'main' },
         { key: 'btnHideFloat', label: 'Hide Float Button', fallback: 'Hide Float', section: 'main' },
-        { key: 'btnToggleMain', label: 'Toggle Main Button', fallback: 'Toggle Main', section: 'window' },
+        { key: 'btnHideMain', label: 'Floating Window - Hide Main Button', fallback: 'Hide Main', section: 'window' },
+        { key: 'btnShowMain', label: 'Floating Window - Show Main Button', fallback: 'Show Main', section: 'window' },
         { key: 'trayToggleMain', label: 'Tray Menu - Toggle Main', fallback: 'Toggle Main', section: 'tray' },
         { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit', section: 'tray' },
         { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button', section: 'other' },
@@ -116,7 +118,12 @@ export default {
     },
     otherFields() {
       return this.customTextFields.filter(f => f.section === 'other');
-    }
+    },
+    filteredItems() {
+      if (!this.searchQuery.trim()) return this.items;
+      const query = this.searchQuery.toLowerCase();
+      return this.items.filter(item => item.name.toLowerCase().includes(query));
+    },
   },
   watch: {
     async open(val) {
@@ -648,6 +655,24 @@ export default {
         this.checkDirty();
       }
     },
+    isNameChanged(record: any): boolean {
+      if ((record as any).isNew) return false;
+      const original = this.originalItems.find(i => i.id === record.id);
+      if (!original) return false;
+      return record.name !== original.name;
+    },
+    isWeightChanged(record: any): boolean {
+      if ((record as any).isNew) return false;
+      const original = this.originalItems.find(i => i.id === record.id);
+      if (!original) return false;
+      return record.weight !== original.weight;
+    },
+    isDisabledChanged(record: any): boolean {
+      if ((record as any).isNew) return false;
+      const original = this.originalItems.find(i => i.id === record.id);
+      if (!original) return false;
+      return record.disabled !== original.disabled;
+    },
   },
   beforeUnmount() {}
 };
@@ -692,8 +717,11 @@ export default {
           <a-form-item>
             <a-button type="primary" @click="handleAddItem">Add</a-button>
           </a-form-item>
+          <a-form-item>
+            <a-input v-model:value="searchQuery" placeholder="Search by name..." allow-clear style="width: 200px" />
+          </a-form-item>
         </a-form>
-        <a-table :dataSource="items" :columns="itemColumns" row-key="id" size="small">
+        <a-table :dataSource="filteredItems" :columns="itemColumns" row-key="id" size="small">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'id'">
               <span v-if="(record as any).isNew" style="color: #bfbfbf;">—</span>
@@ -703,35 +731,47 @@ export default {
               <a-checkbox :checked="isSelected(record.id)" @change="toggleSelection(record.id)" />
             </template>
             <template v-if="column.key === 'name'">
-              <a-input 
-                v-if="editingNameKey === record.id" 
-                v-model:value="editName" 
-                size="small" 
+              <a-input
+                v-if="editingNameKey === record.id"
+                v-model:value="editName"
+                size="small"
                 style="width: 120px"
                 @blur="onEditBlur"
                 @pressEnter="saveAllEdits"
-                @dblclick.stop 
+                @dblclick.stop
               />
-              <span v-else @click.stop="startEditName(record)" @dblclick.stop style="cursor: pointer;">{{ record.name }}</span>
+              <span v-else @click.stop="startEditName(record)" @dblclick.stop style="cursor: pointer;">
+                <span :style="{ backgroundColor: isNameChanged(record) ? '#fff3e0' : 'transparent', padding: '2px 4px', borderRadius: '2px' }">
+                  {{ record.name }}
+                  <a-tag v-if="isNameChanged(record)" color="orange" size="small" style="margin-left: 4px;">Modified</a-tag>
+                  <a-tag v-if="(record as any).isNew" color="blue" size="small" style="margin-left: 4px;">New</a-tag>
+                </span>
+              </span>
             </template>
             <template v-else-if="column.key === 'weight'">
-              <a-input-number 
-                v-if="editingWeightKey === record.id" 
-                v-model:value="editWeight" 
-                :min="1" 
-                :max="100" 
-                size="small" 
+              <a-input-number
+                v-if="editingWeightKey === record.id"
+                v-model:value="editWeight"
+                :min="1"
+                :max="100"
+                size="small"
                 style="width: 60px"
                 @blur="onEditBlur"
                 @pressEnter="saveAllEdits"
-                @dblclick.stop 
+                @dblclick.stop
               />
-              <span v-else @click.stop="startEditWeight(record)" @dblclick.stop style="cursor: pointer;">{{ record.weight }}</span>
+              <span v-else @click.stop="startEditWeight(record)" @dblclick.stop style="cursor: pointer;">
+                <span :style="{ backgroundColor: isWeightChanged(record) ? '#fff3e0' : 'transparent', padding: '2px 4px', borderRadius: '2px' }">
+                  {{ record.weight }}
+                  <a-tag v-if="isWeightChanged(record)" color="orange" size="small" style="margin-left: 4px;">Modified</a-tag>
+                </span>
+              </span>
             </template>
             <template v-else-if="column.key === 'disabled'">
               <a-tag :color="record.disabled ? 'red' : 'green'">
                 {{ record.disabled ? 'Disabled' : 'Active' }}
               </a-tag>
+              <a-tag v-if="isDisabledChanged(record)" color="orange" size="small">Modified</a-tag>
             </template>
             <template v-else-if="column.key === 'actions'">
               <a-button type="text" size="small" @click="updateItemDisabled(record.id, record.disabled ? 0 : 1)">
