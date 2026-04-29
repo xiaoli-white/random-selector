@@ -704,7 +704,10 @@ export default {
     onEditBlur() {
       setTimeout(() => {
         const activeEl = document.activeElement;
-        if (!activeEl || !activeEl.closest('.ant-table')) {
+        const isStillEditingName = this.editingNameKey !== null && activeEl && activeEl.closest(`[data-edit-name="${this.editingNameKey}"]`);
+        const isStillEditingWeight = this.editingWeightKey !== null && activeEl && activeEl.closest(`[data-edit-weight="${this.editingWeightKey}"]`);
+        
+        if (!isStillEditingName && !isStillEditingWeight) {
           this.saveAllEdits();
         }
       }, 200);
@@ -1004,6 +1007,7 @@ export default {
                 v-model:value="editName"
                 size="small"
                 style="width: 120px"
+                :data-edit-name="record.id"
                 @blur="onEditBlur"
                 @pressEnter="saveAllEdits"
                 @dblclick.stop
@@ -1025,6 +1029,7 @@ export default {
                 :step="0.1"
                 size="small"
                 style="width: 80px"
+                :data-edit-weight="record.id"
                 @blur="onEditBlur"
                 @pressEnter="saveAllEdits"
                 @dblclick.stop
