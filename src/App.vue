@@ -400,6 +400,11 @@ body {
   font-weight: 500;
   word-break: keep-all;
   flex: 0 1 auto;
+  cursor: default;
+}
+
+.large-button:hover {
+  cursor: default;
 }
 
 .items-card {

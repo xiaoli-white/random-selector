@@ -130,13 +130,12 @@ export default {
       this.items = await getAllItems();
       this.history = await getHistory(50);
       const duration = await getSetting('autoDuration');
-      if (duration) this.autoDuration = parseInt(duration) || 2000;
+      this.autoDuration = duration ? parseInt(duration) || 2000 : 2000;
       this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
-      
+
       this.originalItems = JSON.parse(JSON.stringify(this.items));
       this.originalHistory = JSON.parse(JSON.stringify(this.history));
-       this.originalAutoDuration = this.autoDuration;
-       this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
+      this.originalAutoDuration = this.autoDuration;
       this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
       this.pendingAdds = [];
       this.pendingDeletes = [];
@@ -659,7 +658,7 @@ export default {
       <a-tab-pane key="general" tab="General">
         <a-form layout="vertical">
           <a-form-item label="Auto Duration (ms)">
-            <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="500" style="width: 100%" />
+            <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="500" @change="checkDirty" style="width: 100%" />
           </a-form-item>
           <a-form-item label="Main Window Always On Top">
             <a-switch v-model:checked="mainWindowAlwaysOnTop" @change="checkDirty" />
@@ -866,6 +865,16 @@ export default {
 <style scoped>
 .mb-3 {
   margin-bottom: 12px;
+}
+
+button,
+.ant-btn {
+  cursor: default;
+}
+
+button:hover,
+.ant-btn:hover {
+  cursor: default;
 }
 .history-time {
   font-size: 12px;
