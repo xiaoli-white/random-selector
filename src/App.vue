@@ -99,28 +99,42 @@ export default {
       await appWindow.onCloseRequested(async (event) => {
         event.preventDefault();
         this.saveFloatingWindowState();
-        
+
+        if (this.isSelecting || this.isAutoSelecting || this.isAnimating) {
+          this.stopAnimation();
+          this.stopAutoSelect();
+          this.isSelecting = false;
+          this.isAutoSelecting = false;
+        }
+
         await invoke('hide_main_window');
         setTimeout(() => this.updateTrayMenu(), 100);
       });
     },
     setupVisibilityWatcher() {
       const appWindow = getCurrentWindow();
-      const checkVisibility = async () => {
-        await this.updateTrayMenu();
-      };
-      appWindow.onFocusChanged(async ({ payload }) => {
-        if (payload) {
-          await checkVisibility();
+
+      setInterval(async () => {
+        try {
+          const isVisible = await appWindow.isVisible();
+          const isMinimized = await appWindow.isMinimized();
+          if (!isVisible && !isMinimized) {
+            if (this.showMainInterface) {
+              this.showMainInterface = false;
+              await invoke('hide_main_window');
+            }
+          } else if (isMinimized) {
+            if (this.showMainInterface) {
+              this.showMainInterface = false;
+            }
+          } else {
+            if (!this.showMainInterface) {
+              this.showMainInterface = true;
+            }
+          }
+        } catch (e) {
         }
-      }).then((unlisten) => {
-        setTimeout(() => {
-          if (unlisten) unlisten();
-        }, 30000);
-      });
-      setInterval(() => {
-        this.updateTrayMenu();
-      }, 1000);
+      }, 500);
     },
     async toggleFloating() {
       try {
@@ -248,9 +262,19 @@ export default {
       if (this.showMainInterface) {
         invoke('show_main_window');
       } else {
+        if (this.isSelecting || this.isAutoSelecting || this.isAnimating) {
+          this.stopAnimation();
+          this.stopAutoSelect();
+          this.isSelecting = false;
+          this.isAutoSelecting = false;
+        }
         invoke('hide_main_window');
       }
       setTimeout(() => this.updateTrayMenu(), 100);
+    },
+    async emitWindowStateChange() {
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('window-state-changed');
     },
     async onSettingsRefresh() {
       await this.loadItems();
@@ -375,7 +399,7 @@ body {
 
 .result-display .ant-typography h1,
 .result-display .ant-typography-title {
-  font-size: 48px !important;
+  font-size: 96px !important;
   font-weight: bold;
 }
 
@@ -400,11 +424,6 @@ body {
   font-weight: 500;
   word-break: keep-all;
   flex: 0 1 auto;
-  cursor: default;
-}
-
-.large-button:hover {
-  cursor: default;
 }
 
 .items-card {
