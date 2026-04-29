@@ -30,7 +30,7 @@ export default {
       showImport: false,
       newItemName: '',
       importText: '',
-      editWeight: 1,
+      editWeight: 1.0,
       editName: '',
       editingNameKey: null as number | null,
       editingWeightKey: null as number | null,
@@ -53,7 +53,7 @@ export default {
         { title: 'Selected Count', dataIndex: 'selected_count', key: 'selected_count', width: 120 },
       ],
       selectedItemIds: [] as number[],
-      batchWeight: 1,
+      batchWeight: 1.0,
       isDirty: false,
       showPasswordModal: false,
       passwordInput: '',
@@ -975,7 +975,7 @@ export default {
           </a-button>
           <a-space>
             <a-button :disabled="selectedItemIds.length === 0" @click="batchUpdateWeight">Set Weight</a-button>
-            <a-input-number v-model:value="batchWeight" :min="1" :max="100" size="small" style="width: 60px" />
+            <a-input-number v-model:value="batchWeight" :min="0.01" :max="1000" :step="0.1" size="small" style="width: 80px" />
           </a-space>
         </a-space>
         <a-form layout="inline" class="mb-3">
@@ -1020,17 +1020,18 @@ export default {
               <a-input-number
                 v-if="editingWeightKey === record.id"
                 v-model:value="editWeight"
-                :min="1"
-                :max="100"
+                :min="0.01"
+                :max="1000"
+                :step="0.1"
                 size="small"
-                style="width: 60px"
+                style="width: 80px"
                 @blur="onEditBlur"
                 @pressEnter="saveAllEdits"
                 @dblclick.stop
               />
               <span v-else @click.stop="startEditWeight(record)" @dblclick.stop style="cursor: pointer;">
                 <span :style="{ backgroundColor: isWeightChanged(record) ? '#fff3e0' : 'transparent', padding: '2px 4px', borderRadius: '2px' }">
-                  {{ record.weight }}
+                  {{ typeof record.weight === 'number' ? record.weight.toFixed(2).replace(/\.?0+$/, '') : record.weight }}
                   <a-tag v-if="isWeightChanged(record)" color="orange" size="small" style="margin-left: 4px;">Modified</a-tag>
                 </span>
               </span>

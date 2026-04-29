@@ -91,7 +91,7 @@ export async function initDatabase(): Promise<Database> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       config_id INTEGER NOT NULL DEFAULT 1,
       name TEXT NOT NULL,
-      weight INTEGER DEFAULT 1,
+      weight REAL DEFAULT 1,
       selected_count INTEGER DEFAULT 0,
       disabled INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -228,7 +228,7 @@ export async function importFromText(text: string): Promise<{ success: boolean; 
   for (const line of lines) {
     const parts = line.split(/[,\t]/);
     const name = parts[0].trim();
-    const weight = parts.length > 1 ? parseInt(parts[1]) || 1 : 1;
+    const weight = parts.length > 1 ? parseFloat(parts[1]) || 1 : 1;
 
     if (!name) continue;
 
