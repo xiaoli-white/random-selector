@@ -5,7 +5,9 @@ import {
   getAllItems, getHistory, getSetting, setSetting,
   addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem,
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
-  getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop
+  getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
+  getAllConfigs, createConfig, deleteConfig, switchConfig, copyConfig, renameConfig,
+  getCurrentConfigId
 } from '../db';
 
 export default {
@@ -84,6 +86,16 @@ export default {
         { key: 'errorFloatingWindow', label: 'Floating Window Error', fallback: 'Failed to toggle floating window', section: 'other' },
         { key: 'errorToggleWindow', label: 'Toggle Window Error', fallback: 'Failed to toggle main window', section: 'other' },
       ] as any[],
+      configs: [] as any[],
+      currentConfigId: null as number | null,
+      showCreateConfigModal: false,
+      showCopyConfigModal: false,
+      showRenameConfigModal: false,
+      newConfigName: '',
+      copyConfigName: '',
+      renameConfigName: '',
+      selectedConfigIdForCopy: null as number | null,
+      selectedConfigIdForRename: null as number | null,
     };
   },
   computed: {
@@ -144,7 +156,7 @@ export default {
       this.isDirty = false;
       this.selectedItemIds = [];
       this.batchWeight = 1;
-      
+
       this.hasPassword = await hasPassword();
       const loadedTexts = await getCustomTexts();
       this.customTextFields.forEach(field => {
@@ -160,7 +172,135 @@ export default {
       this.currentPassword = '';
       this.newPassword = '';
       this.confirmPassword = '';
+
+      await this.loadConfigs();
     },
+
+    async loadConfigs() {
+      this.configs = await getAllConfigs();
+      this.currentConfigId = getCurrentConfigId();
+    },
+
+    async refreshConfigData() {
+      // 刷新当前配置的所有数据
+      this.items = await getAllItems();
+      this.history = await getHistory(50);
+      const duration = await getSetting('autoDuration');
+      this.autoDuration = duration ? parseInt(duration) || 2000 : 2000;
+      this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
+      
+      this.originalItems = JSON.parse(JSON.stringify(this.items));
+      this.originalHistory = JSON.parse(JSON.stringify(this.history));
+      this.originalAutoDuration = this.autoDuration;
+      this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
+      this.pendingAdds = [];
+      this.pendingDeletes = [];
+      this.pendingEdits = [];
+      this.pendingHistoryClear = false;
+      this.isDirty = false;
+      this.selectedItemIds = [];
+      this.batchWeight = 1;
+      
+      const loadedTexts = await getCustomTexts();
+      this.customTextFields.forEach(field => {
+        if (!loadedTexts[field.key]) {
+          loadedTexts[field.key] = field.fallback;
+        }
+      });
+      this.customTexts = loadedTexts;
+      this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
+    },
+
+    async handleCreateConfig() {
+      if (!this.newConfigName.trim()) {
+        message.error('Config name cannot be empty');
+        return;
+      }
+
+      const result = await createConfig(this.newConfigName.trim());
+      if (result.success) {
+        message.success('Config created successfully');
+        this.showCreateConfigModal = false;
+        this.newConfigName = '';
+        await this.loadConfigs();
+        // 如果是第一个配置，会自动切换，需要刷新数据
+        if (this.currentConfigId === result.config!.id) {
+          await this.refreshConfigData();
+          this.$emit('refresh');
+        }
+      } else {
+        message.error(result.error || 'Failed to create config');
+      }
+    },
+
+    async handleDeleteConfig(id: number) {
+      const result = await deleteConfig(id);
+      if (result.success) {
+        message.success('Config deleted successfully');
+        await this.loadConfigs();
+        await this.refreshConfigData();
+        this.$emit('refresh');
+      } else {
+        message.error(result.error || 'Failed to delete config');
+      }
+    },
+
+    async handleSwitchConfig(id: number) {
+      const result = await switchConfig(id);
+      if (result.success) {
+        message.success('Switched config successfully');
+        await this.loadConfigs();
+        await this.refreshConfigData();
+        this.$emit('refresh');
+      } else {
+        message.error(result.error || 'Failed to switch config');
+      }
+    },
+
+    async handleCopyConfig() {
+      if (!this.copyConfigName.trim()) {
+        message.error('Config name cannot be empty');
+        return;
+      }
+      if (!this.selectedConfigIdForCopy) {
+        message.error('Please select a source config');
+        return;
+      }
+
+      const result = await copyConfig(this.selectedConfigIdForCopy, this.copyConfigName.trim());
+      if (result.success) {
+        message.success('Config copied successfully');
+        this.showCopyConfigModal = false;
+        this.copyConfigName = '';
+        this.selectedConfigIdForCopy = null;
+        await this.loadConfigs();
+      } else {
+        message.error(result.error || 'Failed to copy config');
+      }
+    },
+
+    async handleRenameConfig() {
+      if (!this.renameConfigName.trim()) {
+        message.error('Config name cannot be empty');
+        return;
+      }
+      if (!this.selectedConfigIdForRename) {
+        message.error('Please select a config to rename');
+        return;
+      }
+
+      const result = await renameConfig(this.selectedConfigIdForRename, this.renameConfigName.trim());
+      if (result.success) {
+        message.success('Config renamed successfully');
+        this.showRenameConfigModal = false;
+        this.renameConfigName = '';
+        this.selectedConfigIdForRename = null;
+        await this.loadConfigs();
+      } else {
+        message.error(result.error || 'Failed to rename config');
+      }
+    },
+
     async openSettingsPanel(): Promise<void> {
       const hasPwd = await hasPassword();
       if (!hasPwd) {
@@ -657,6 +797,41 @@ export default {
     <a-tabs v-model:activeKey="settingsTab">
       <a-tab-pane key="general" tab="General">
         <a-form layout="vertical">
+          <a-form-item label="Configuration">
+            <a-space style="width: 100%" direction="vertical">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <a-select
+                  v-model:value="currentConfigId"
+                  style="flex: 1; min-width: 200px"
+                  @change="handleSwitchConfig"
+                >
+                  <a-select-option v-for="config in configs" :key="config.id" :value="config.id">
+                    {{ config.name }} {{ config.is_active ? '(Active)' : '' }}
+                  </a-select-option>
+                </a-select>
+                <a-button type="primary" @click="showCreateConfigModal = true; newConfigName = ''">
+                  New
+                </a-button>
+                <a-button @click="showCopyConfigModal = true; copyConfigName = ''; selectedConfigIdForCopy = currentConfigId">
+                  Copy From
+                </a-button>
+                <a-button 
+                  danger 
+                  @click="handleDeleteConfig(currentConfigId!)" 
+                  :disabled="configs.length <= 1 || currentConfigId === null"
+                >
+                  Delete
+                </a-button>
+                <a-button 
+                  @click="showRenameConfigModal = true; renameConfigName = configs.find(c => c.id === currentConfigId)?.name || ''; selectedConfigIdForRename = currentConfigId"
+                  :disabled="currentConfigId === null"
+                >
+                  Rename
+                </a-button>
+              </div>
+            </a-space>
+          </a-form-item>
+          <a-divider style="margin: 12px 0;" />
           <a-form-item label="Auto Duration (ms)">
             <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="500" @change="checkDirty" style="width: 100%" />
           </a-form-item>
@@ -859,6 +1034,41 @@ export default {
         </a-button>
       </a-upload>
     </a-space>
+  </a-modal>
+
+  <!-- Create Config Modal -->
+  <a-modal v-model:open="showCreateConfigModal" title="Create New Config" @ok="handleCreateConfig" ok-text="Create" cancel-text="Cancel">
+    <a-form layout="vertical">
+      <a-form-item label="Config Name">
+        <a-input v-model:value="newConfigName" placeholder="Enter config name" @keyup.enter="handleCreateConfig" />
+      </a-form-item>
+    </a-form>
+  </a-modal>
+
+  <!-- Copy Config Modal -->
+  <a-modal v-model:open="showCopyConfigModal" title="Copy Config" @ok="handleCopyConfig" ok-text="Copy" cancel-text="Cancel">
+    <a-form layout="vertical">
+      <a-form-item label="New Config Name">
+        <a-input v-model:value="copyConfigName" placeholder="Enter new config name" @keyup.enter="handleCopyConfig" />
+      </a-form-item>
+      <a-form-item label="Copy From">
+        <a-select v-model:value="selectedConfigIdForCopy">
+          <a-select-option v-for="config in configs" :key="config.id" :value="config.id">
+            {{ config.name }}
+          </a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-alert type="info" message="This will copy all items and settings from the selected config. History will not be copied." show-icon />
+    </a-form>
+  </a-modal>
+
+  <!-- Rename Config Modal -->
+  <a-modal v-model:open="showRenameConfigModal" title="Rename Config" @ok="handleRenameConfig" ok-text="Rename" cancel-text="Cancel">
+    <a-form layout="vertical">
+      <a-form-item label="New Config Name">
+        <a-input v-model:value="renameConfigName" placeholder="Enter new config name" @keyup.enter="handleRenameConfig" />
+      </a-form-item>
+    </a-form>
   </a-modal>
 </template>
 
