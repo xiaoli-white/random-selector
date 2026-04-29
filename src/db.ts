@@ -33,7 +33,6 @@ async function ensureDefaultConfig(): Promise<void> {
   const activeConfig = await db.select('SELECT id FROM configs WHERE is_active = 1 LIMIT 1') as any[];
   
   if (activeConfig.length === 0) {
-    // 创建默认配置并设为活跃
     const result = await db.execute(
       'INSERT INTO configs (name, is_active) VALUES ($1, $2)',
       ['Default', 1]
@@ -47,11 +46,9 @@ async function ensureDefaultConfig(): Promise<void> {
 async function migrateConfigIds(): Promise<void> {
   if (!db) return;
   
-  // 使用事务确保数据一致性
   try {
     await db.execute('BEGIN TRANSACTION');
     
-    // 获取或创建默认配置ID
     let defaultConfigId = currentConfigId;
     if (!defaultConfigId) {
       const result = await db.execute(
@@ -61,7 +58,6 @@ async function migrateConfigIds(): Promise<void> {
       defaultConfigId = result.lastInsertId as number;
     }
     
-    // 迁移孤立数据到当前活跃配置
     await db.execute('UPDATE students SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
     await db.execute('UPDATE settings SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
     await db.execute('UPDATE history SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
@@ -81,7 +77,6 @@ export async function initDatabase(): Promise<Database> {
 
   await db.execute('PRAGMA journal_mode = DELETE');
 
-  // 创建configs表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS configs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,7 +86,6 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
-  // 创建students表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS students (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,11 +99,9 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
-  // 添加缺失的列（如果不存在）
   await db.execute('ALTER TABLE students ADD COLUMN disabled INTEGER DEFAULT 0').catch(() => {});
   await db.execute('ALTER TABLE students ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
 
-  // 创建settings表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT NOT NULL,
@@ -120,7 +112,6 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
-  // 创建history表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,10 +126,8 @@ export async function initDatabase(): Promise<Database> {
 
   await db.execute('ALTER TABLE history ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
 
-  // 确保有默认配置并设置当前活跃配置
   await ensureDefaultConfig();
   
-  // 迁移现有数据
   await migrateConfigIds();
 
   return db;
@@ -607,20 +596,133 @@ export async function copyConfig(sourceId: number, newName: string): Promise<{ s
 
 export async function renameConfig(id: number, newName: string): Promise<{ success: boolean; error?: string }> {
   const database = await getDatabase();
-  
+
   const existing = await database.select(
     'SELECT * FROM configs WHERE name = $1 AND id != $2',
     [newName, id]
   ) as any[];
-  
+
   if (existing.length > 0) {
     return { success: false, error: 'Config name already exists' };
   }
-  
+
   await database.execute(
     'UPDATE configs SET name = $1 WHERE id = $2',
     [newName, id]
   );
-  
+
   return { success: true };
+}
+
+export interface ExportedConfig {
+  config: Config;
+  students: Item[];
+  settings: AppSettings[];
+  history: any[];
+}
+
+export interface ExportData {
+  version: number;
+  exportedAt: string;
+  configs: ExportedConfig[];
+}
+
+export async function exportConfig(configId: number): Promise<ExportedConfig | null> {
+  const database = await getDatabase();
+
+  const configs = await database.select('SELECT * FROM configs WHERE id = $1', [configId]) as any[];
+  if (configs.length === 0) return null;
+
+  const students = await database.select('SELECT * FROM students WHERE config_id = $1', [configId]) as any[];
+  const settings = await database.select('SELECT * FROM settings WHERE config_id = $1', [configId]) as any[];
+  const history = await database.select('SELECT * FROM history WHERE config_id = $1', [configId]) as any[];
+
+  return {
+    config: configs[0] as Config,
+    students: students as Item[],
+    settings: settings as AppSettings[],
+    history,
+  };
+}
+
+export async function exportConfigs(configIds: number[]): Promise<ExportData> {
+  const configs: ExportedConfig[] = [];
+  for (const id of configIds) {
+    const data = await exportConfig(id);
+    if (data) {
+      configs.push(data);
+    }
+  }
+
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    configs,
+  };
+}
+
+export async function importConfig(exportData: ExportData): Promise<{ success: boolean; imported: string[]; errors: string[] }> {
+  const database = await getDatabase();
+  const imported: string[] = [];
+  const errors: string[] = [];
+
+  try {
+    await database.execute('BEGIN TRANSACTION');
+
+    for (const exportedConfig of exportData.configs) {
+      try {
+        const existing = await database.select(
+          'SELECT id FROM configs WHERE name = $1',
+          [exportedConfig.config.name]
+        ) as any[];
+
+        let configId: number;
+
+        if (existing.length > 0) {
+          configId = existing[0].id;
+          await database.execute('DELETE FROM students WHERE config_id = $1', [configId]);
+          await database.execute('DELETE FROM settings WHERE config_id = $1', [configId]);
+          await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
+        } else {
+          const result = await database.execute(
+            'INSERT INTO configs (name, is_active) VALUES ($1, 0)',
+            [exportedConfig.config.name]
+          );
+          configId = result.lastInsertId as number;
+        }
+
+        for (const student of exportedConfig.students) {
+          await database.execute(
+            'INSERT INTO students (config_id, name, weight, selected_count, disabled) VALUES ($1, $2, $3, $4, $5)',
+            [configId, student.name, student.weight, student.selected_count, student.disabled]
+          );
+        }
+
+        for (const setting of exportedConfig.settings) {
+          await database.execute(
+            'INSERT INTO settings (key, value, config_id) VALUES ($1, $2, $3)',
+            [setting.key, setting.value, configId]
+          );
+        }
+
+        for (const record of exportedConfig.history) {
+          await database.execute(
+            'INSERT INTO history (config_id, student_id, student_name, selected_at) VALUES ($1, $2, $3, $4)',
+            [configId, record.student_id, record.student_name, record.selected_at]
+          );
+        }
+
+        imported.push(exportedConfig.config.name);
+      } catch (e) {
+        errors.push(`Failed to import config "${exportedConfig.config.name}": ${(e as Error).message}`);
+      }
+    }
+
+    await database.execute('COMMIT');
+  } catch (e) {
+    await database.execute('ROLLBACK');
+    errors.push(`Transaction failed: ${(e as Error).message}`);
+  }
+
+  return { success: errors.length === 0, imported, errors };
 }

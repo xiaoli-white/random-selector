@@ -7,7 +7,7 @@ import {
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
   getAllConfigs, createConfig, deleteConfig, switchConfig, copyConfig, renameConfig,
-  getCurrentConfigId
+  getCurrentConfigId, exportConfigs, importConfig, ExportData
 } from '../db';
 
 export default {
@@ -96,6 +96,11 @@ export default {
       renameConfigName: '',
       selectedConfigIdForCopy: null as number | null,
       selectedConfigIdForRename: null as number | null,
+      showExportModal: false,
+      showConfigImportModal: false,
+      exportSelectedConfigIds: [] as number[],
+      configImportText: '',
+      configImportFileContent: null as string | null,
     };
   },
   computed: {
@@ -182,7 +187,6 @@ export default {
     },
 
     async refreshConfigData() {
-      // 刷新当前配置的所有数据
       this.items = await getAllItems();
       this.history = await getHistory(50);
       const duration = await getSetting('autoDuration');
@@ -223,7 +227,6 @@ export default {
         this.showCreateConfigModal = false;
         this.newConfigName = '';
         await this.loadConfigs();
-        // 如果是第一个配置，会自动切换，需要刷新数据
         if (this.currentConfigId === result.config!.id) {
           await this.refreshConfigData();
           this.$emit('refresh');
@@ -298,6 +301,89 @@ export default {
         await this.loadConfigs();
       } else {
         message.error(result.error || 'Failed to rename config');
+      }
+    },
+
+    async handleExportConfigs() {
+      if (this.exportSelectedConfigIds.length === 0) {
+        message.warning('Please select at least one config to export');
+        return;
+      }
+
+      try {
+        const exportData = await exportConfigs(this.exportSelectedConfigIds);
+        const jsonStr = JSON.stringify(exportData, null, 2);
+
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const filePath = await save({
+          title: 'Save Export File',
+          filters: [{
+            name: 'JSON',
+            extensions: ['json']
+          }]
+        });
+
+        if (filePath) {
+          const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+          await writeTextFile(filePath, jsonStr);
+          message.success(`Successfully exported ${exportData.configs.length} config(s) to ${filePath}`);
+          this.showExportModal = false;
+          this.exportSelectedConfigIds = [];
+        }
+      } catch (error) {
+        console.error('Export failed:', error);
+        message.error('Failed to export configs');
+      }
+    },
+
+    async handleImportFromFile(file: File): Promise<boolean> {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const text = e.target?.result as string;
+        try {
+          const exportData = JSON.parse(text) as ExportData;
+          if (!exportData.configs || !Array.isArray(exportData.configs)) {
+            message.error('Invalid export file format');
+            return;
+          }
+
+          this.configImportText = text;
+          this.configImportFileContent = text;
+          this.showConfigImportModal = true;
+        } catch {
+          message.error('Failed to parse export file');
+        }
+      };
+      reader.readAsText(file);
+      return false;
+    },
+
+    async handleImportConfigs() {
+      if (!this.configImportFileContent) {
+        message.warning('Please select an export file to import');
+        return;
+      }
+
+      try {
+        const exportData = JSON.parse(this.configImportFileContent) as ExportData;
+        const result = await importConfig(exportData);
+
+        if (result.imported.length > 0) {
+          message.success(`Successfully imported: ${result.imported.join(', ')}`);
+        }
+        if (result.errors.length > 0) {
+          message.error(`Import errors: ${result.errors.join('; ')}`);
+        }
+
+        this.showConfigImportModal = false;
+        this.configImportText = '';
+        this.configImportFileContent = null;
+        await this.loadConfigs();
+        await this.refreshConfigData();
+        this.$emit('refresh');
+      } catch (error) {
+        console.error('Import failed:', error);
+        message.error('Failed to import configs');
       }
     },
 
@@ -481,7 +567,7 @@ export default {
         this.selectedItemIds.splice(idx, 1);
       }
     },
-    showImportModal() {
+    showItemImportModal() {
       this.showImport = true;
     },
     async handleFileUpload(file: File) {
@@ -822,11 +908,19 @@ export default {
                 >
                   Delete
                 </a-button>
-                <a-button 
+                <a-button
                   @click="showRenameConfigModal = true; renameConfigName = configs.find(c => c.id === currentConfigId)?.name || ''; selectedConfigIdForRename = currentConfigId"
                   :disabled="currentConfigId === null"
                 >
                   Rename
+                </a-button>
+                <a-button type="primary" @click="showExportModal = true; exportSelectedConfigIds = [currentConfigId!]">
+                  Export
+                </a-button>
+                <a-button>
+                  <a-upload :before-upload="handleImportFromFile" :show-upload-list="false" accept=".json">
+                    Import
+                  </a-upload>
                 </a-button>
               </div>
             </a-space>
@@ -842,7 +936,7 @@ export default {
       </a-tab-pane>
       <a-tab-pane key="items" tab="Items">
         <a-space class="mb-3">
-          <a-button @click="showImportModal">Import</a-button>
+          <a-button @click="showItemImportModal">Import</a-button>
           <a-popconfirm title="Clear all items?" @confirm="handleClearAll" ok-text="Yes" cancel-text="No">
             <a-button danger :disabled="items.length === 0">Clear All</a-button>
           </a-popconfirm>
@@ -1067,6 +1161,43 @@ export default {
     <a-form layout="vertical">
       <a-form-item label="New Config Name">
         <a-input v-model:value="renameConfigName" placeholder="Enter new config name" @keyup.enter="handleRenameConfig" />
+      </a-form-item>
+    </a-form>
+  </a-modal>
+
+  <!-- Export Config Modal -->
+  <a-modal v-model:open="showExportModal" title="Export Configs" @ok="handleExportConfigs" ok-text="Export" cancel-text="Cancel">
+    <a-form layout="vertical">
+      <a-form-item label="Select Configs to Export">
+        <a-checkbox
+          :checked="exportSelectedConfigIds.length === configs.length"
+          :indeterminate="exportSelectedConfigIds.length > 0 && exportSelectedConfigIds.length < configs.length"
+          @change="(e: any) => exportSelectedConfigIds = e.target.checked ? configs.map((c: any) => c.id) : []"
+        >
+          Select All
+        </a-checkbox>
+      </a-form-item>
+      <a-divider style="margin: 8px 0;" />
+      <a-checkbox-group v-model:value="exportSelectedConfigIds" style="width: 100%">
+        <a-row :gutter="[8, 8]">
+          <a-col :span="12" v-for="config in configs" :key="config.id">
+            <a-checkbox :value="config.id">
+              {{ config.name }} {{ config.is_active ? '(Active)' : '' }}
+            </a-checkbox>
+          </a-col>
+        </a-row>
+      </a-checkbox-group>
+      <a-alert type="info" message="Exported data includes all items, settings, and history for selected configs." show-icon />
+    </a-form>
+  </a-modal>
+
+  <!-- Import Config Modal -->
+  <a-modal v-model:open="showConfigImportModal" title="Import Configs" @ok="handleImportConfigs" ok-text="Import" cancel-text="Cancel">
+    <a-form layout="vertical">
+      <a-alert type="warning" message="Importing will overwrite existing configs with the same name. History in existing configs will be cleared before import." show-icon />
+      <a-divider style="margin: 12px 0;" />
+      <a-form-item label="Preview">
+        <a-textarea v-model:value="configImportText" :rows="8" readonly />
       </a-form-item>
     </a-form>
   </a-modal>
