@@ -72,14 +72,14 @@ export default {
       searchQuery: '',
       customTextFields: [
         { key: 'windowTitle', label: 'Window Title (System Title Bar)', fallback: 'Random Selector', section: 'main' },
-        { key: 'appTitle', label: 'App Title (Main Display)', fallback: 'Random Selector', section: 'main' },
+        { key: 'appTitle', label: 'App Title (Main Interface)', fallback: 'Random Selector', section: 'main' },
         { key: 'btnStart', label: 'Start Button', fallback: 'Start', section: 'main' },
         { key: 'btnStop', label: 'Stop Button', fallback: 'Stop', section: 'main' },
         { key: 'btnAuto', label: 'Auto Button', fallback: 'Auto', section: 'main' },
         { key: 'btnShowFloat', label: 'Show Float Button', fallback: 'Show Float', section: 'main' },
         { key: 'btnHideFloat', label: 'Hide Float Button', fallback: 'Hide Float', section: 'main' },
-        { key: 'btnHideMain', label: 'Floating Window - Hide Main Button', fallback: 'Hide Main', section: 'window' },
         { key: 'btnShowMain', label: 'Floating Window - Show Main Button', fallback: 'Show Main', section: 'window' },
+        { key: 'btnHideMain', label: 'Floating Window - Hide Main Button', fallback: 'Hide Main', section: 'window' },
         { key: 'trayToggleMain', label: 'Tray Menu - Toggle Main', fallback: 'Toggle Main', section: 'tray' },
         { key: 'trayQuit', label: 'Tray Menu - Quit', fallback: 'Quit', section: 'tray' },
         { key: 'hintText', label: 'Hint Text', fallback: 'Click "Start" button', section: 'other' },
@@ -112,6 +112,7 @@ export default {
     },
     sortedStats() {
       return [...this.items]
+        .filter(item => !(item as any).isNew)
         .sort((a, b) => b.selected_count - a.selected_count)
         .map((s, i) => ({ ...s, rank: i + 1 }));
     },
