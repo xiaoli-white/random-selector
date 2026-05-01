@@ -16,6 +16,9 @@
     "core:window:allow-close",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-always-on-top",
-    "core:window:allow-set-skip-taskbar"
+    "core:window:allow-set-skip-taskbar",
+    "dialog:default",
+    "dialog:allow-save",
+    "fs:allow-write-text-file"
   ]
 }

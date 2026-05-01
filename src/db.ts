@@ -452,35 +452,29 @@ export async function getAllConfigs(): Promise<Config[]> {
   return await database.select<Config[]>('SELECT * FROM configs ORDER BY created_at');
 }
 
-export async function createConfig(name: string): Promise<{ success: boolean; error?: string; config?: Config }> {
+export async function createConfig(name: string, isActive: boolean = false): Promise<{ success: boolean; error?: string; config?: Config }> {
   const database = await getDatabase();
-  
+
   const existing = await database.select(
     'SELECT * FROM configs WHERE name = $1',
     [name]
   ) as any[];
-  
+
   if (existing.length > 0) {
     return { success: false, error: 'Config name already exists' };
   }
-  
-  const activeCount = await database.select('SELECT COUNT(*) as count FROM configs WHERE is_active = 1') as any[];
-  const isFirst = activeCount[0].count === 0;
-  
+
   const result = await database.execute(
     'INSERT INTO configs (name, is_active) VALUES ($1, $2)',
-    [name, isFirst ? 1 : 0]
+    [name, isActive ? 1 : 0]
   );
-  
+
   const newConfig = await database.select(
     'SELECT * FROM configs WHERE id = $1',
     [result.lastInsertId]
   ) as any[];
   
   if (newConfig.length > 0) {
-    if (isFirst) {
-      currentConfigId = newConfig[0].id;
-    }
     return { success: true, config: newConfig[0] as Config };
   }
   

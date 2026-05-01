@@ -92,7 +92,14 @@ export default {
         { key: 'errorToggleWindow', label: 'Toggle Window Error', fallback: 'Failed to toggle main window', section: 'other' },
       ] as any[],
       configs: [] as any[],
+      originalConfigs: [] as any[],
       currentConfigId: null as number | null,
+      pendingConfigCreates: [] as Array<{ name: string, tempId: number }>,
+      pendingConfigDeletes: [] as number[],
+      pendingConfigRenames: [] as Array<{ id: number, newName: string }>,
+      pendingConfigCopies: [] as Array<{ sourceId: number, newName: string, tempId: number }>,
+      pendingConfigSwitchId: null as number | null,
+      nextTempConfigId: -1,
       showCreateConfigModal: false,
       showCopyConfigModal: false,
       showRenameConfigModal: false,
@@ -145,6 +152,34 @@ export default {
       const query = this.searchQuery.toLowerCase();
       return this.items.filter(item => item.name.toLowerCase().includes(query));
     },
+    displayConfigs() {
+      let result = this.configs.filter(c => !this.pendingConfigDeletes.includes(c.id));
+
+      for (const rename of this.pendingConfigRenames) {
+        const cfg = result.find(c => c.id === rename.id);
+        if (cfg) {
+          cfg._pendingNewName = rename.newName;
+        }
+      }
+
+      for (const create of this.pendingConfigCreates) {
+        result.push({ id: create.tempId, name: create.name, is_active: 0, _isPending: true });
+      }
+
+      for (const copy of this.pendingConfigCopies) {
+        result.push({ id: copy.tempId, name: copy.newName, is_active: 0, _isPending: true });
+      }
+
+      const activeId = this.pendingConfigSwitchId !== null ? this.pendingConfigSwitchId : this.currentConfigId;
+      for (const cfg of result) {
+        cfg._isActive = cfg.id === activeId;
+      }
+
+      return result;
+    },
+    effectiveConfigId() {
+      return this.pendingConfigSwitchId !== null ? this.pendingConfigSwitchId : this.currentConfigId;
+    },
   },
   watch: {
     async open(val) {
@@ -189,7 +224,15 @@ export default {
       this.newPassword = '';
       this.confirmPassword = '';
 
+      this.pendingConfigCreates = [];
+      this.pendingConfigDeletes = [];
+      this.pendingConfigRenames = [];
+      this.pendingConfigCopies = [];
+      this.pendingConfigSwitchId = null;
+      this.nextTempConfigId = -1;
+
       await this.loadConfigs();
+      this.originalConfigs = JSON.parse(JSON.stringify(this.configs));
     },
 
     async loadConfigs() {
@@ -203,7 +246,7 @@ export default {
       const duration = await getSetting('autoDuration');
       this.autoDuration = duration ? parseInt(duration) || 2000 : 2000;
       this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
-      
+
       this.originalItems = JSON.parse(JSON.stringify(this.items));
       this.originalHistory = JSON.parse(JSON.stringify(this.history));
       this.originalAutoDuration = this.autoDuration;
@@ -215,7 +258,14 @@ export default {
       this.isDirty = false;
       this.selectedItemIds = [];
       this.batchWeight = 1;
-      
+
+      this.pendingConfigCreates = [];
+      this.pendingConfigDeletes = [];
+      this.pendingConfigRenames = [];
+      this.pendingConfigCopies = [];
+      this.pendingConfigSwitchId = null;
+      this.nextTempConfigId = -1;
+
       const loadedTexts = await getCustomTexts();
       this.customTextFields.forEach(field => {
         if (!loadedTexts[field.key]) {
@@ -224,6 +274,9 @@ export default {
       });
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
+
+      await this.loadConfigs();
+      this.originalConfigs = JSON.parse(JSON.stringify(this.configs));
     },
 
     async handleCreateConfig() {
@@ -232,43 +285,55 @@ export default {
         return;
       }
 
-      const result = await createConfig(this.newConfigName.trim());
-      if (result.success) {
-        message.success('Config created successfully');
-        this.showCreateConfigModal = false;
-        this.newConfigName = '';
-        await this.loadConfigs();
-        if (this.currentConfigId === result.config!.id) {
-          await this.refreshConfigData();
-          this.$emit('refresh');
-        }
-      } else {
-        message.error(result.error || 'Failed to create config');
+      const allNames = [
+        ...this.configs.map(c => c.name),
+        ...this.pendingConfigCreates.map(c => c.name),
+        ...this.pendingConfigCopies.map(c => c.newName),
+      ];
+      const renamedNames = this.pendingConfigRenames.map(r => r.newName);
+      if (allNames.includes(this.newConfigName.trim()) || renamedNames.includes(this.newConfigName.trim())) {
+        message.error('Config name already exists');
+        return;
       }
+
+      const tempId = this.nextTempConfigId--;
+      this.pendingConfigCreates.push({ name: this.newConfigName.trim(), tempId });
+      this.showCreateConfigModal = false;
+      this.newConfigName = '';
+      this.checkDirty();
+      message.success('Config creation pending, click Save to apply');
     },
 
     async handleDeleteConfig(id: number) {
-      const result = await deleteConfig(id);
-      if (result.success) {
-        message.success('Config deleted successfully');
-        await this.loadConfigs();
-        await this.refreshConfigData();
-        this.$emit('refresh');
-      } else {
-        message.error(result.error || 'Failed to delete config');
+      if (this.pendingConfigCreates.some(c => c.tempId === id)) {
+        this.pendingConfigCreates = this.pendingConfigCreates.filter(c => c.tempId !== id);
+        this.checkDirty();
+        message.info('Pending config creation cancelled');
+        return;
+      }
+
+      if (id === this.currentConfigId) {
+        message.error('Cannot delete active config');
+        return;
+      }
+
+      if (!this.pendingConfigDeletes.includes(id)) {
+        this.pendingConfigDeletes.push(id);
+        if (this.pendingConfigSwitchId === id) {
+          this.pendingConfigSwitchId = null;
+        }
+        this.checkDirty();
+        message.success('Config deletion pending, click Save to apply');
       }
     },
 
     async handleSwitchConfig(id: number) {
-      const result = await switchConfig(id);
-      if (result.success) {
-        message.success('Switched config successfully');
-        await this.loadConfigs();
-        await this.refreshConfigData();
-        this.$emit('refresh');
+      if (id === this.currentConfigId) {
+        this.pendingConfigSwitchId = null;
       } else {
-        message.error(result.error || 'Failed to switch config');
+        this.pendingConfigSwitchId = id;
       }
+      this.checkDirty();
     },
 
     async handleCopyConfig() {
@@ -281,16 +346,24 @@ export default {
         return;
       }
 
-      const result = await copyConfig(this.selectedConfigIdForCopy, this.copyConfigName.trim());
-      if (result.success) {
-        message.success('Config copied successfully');
-        this.showCopyConfigModal = false;
-        this.copyConfigName = '';
-        this.selectedConfigIdForCopy = null;
-        await this.loadConfigs();
-      } else {
-        message.error(result.error || 'Failed to copy config');
+      const allNames = [
+        ...this.configs.map(c => c.name),
+        ...this.pendingConfigCreates.map(c => c.name),
+        ...this.pendingConfigCopies.map(c => c.newName),
+      ];
+      const renamedNames = this.pendingConfigRenames.map(r => r.newName);
+      if (allNames.includes(this.copyConfigName.trim()) || renamedNames.includes(this.copyConfigName.trim())) {
+        message.error('Config name already exists');
+        return;
       }
+
+      const tempId = this.nextTempConfigId--;
+      this.pendingConfigCopies.push({ sourceId: this.selectedConfigIdForCopy, newName: this.copyConfigName.trim(), tempId });
+      this.showCopyConfigModal = false;
+      this.copyConfigName = '';
+      this.selectedConfigIdForCopy = null;
+      this.checkDirty();
+      message.success('Config copy pending, click Save to apply');
     },
 
     async handleRenameConfig() {
@@ -303,16 +376,30 @@ export default {
         return;
       }
 
-      const result = await renameConfig(this.selectedConfigIdForRename, this.renameConfigName.trim());
-      if (result.success) {
-        message.success('Config renamed successfully');
-        this.showRenameConfigModal = false;
-        this.renameConfigName = '';
-        this.selectedConfigIdForRename = null;
-        await this.loadConfigs();
-      } else {
-        message.error(result.error || 'Failed to rename config');
+      const allNames = [
+        ...this.configs.filter(c => c.id !== this.selectedConfigIdForRename).map(c => c.name),
+        ...this.pendingConfigCreates.map(c => c.name),
+        ...this.pendingConfigCopies.map(c => c.newName),
+      ];
+      const renamedNames = this.pendingConfigRenames
+        .filter(r => r.id !== this.selectedConfigIdForRename)
+        .map(r => r.newName);
+      if (allNames.includes(this.renameConfigName.trim()) || renamedNames.includes(this.renameConfigName.trim())) {
+        message.error('Config name already exists');
+        return;
       }
+
+      const existing = this.pendingConfigRenames.find(r => r.id === this.selectedConfigIdForRename);
+      if (existing) {
+        existing.newName = this.renameConfigName.trim();
+      } else {
+        this.pendingConfigRenames.push({ id: this.selectedConfigIdForRename, newName: this.renameConfigName.trim() });
+      }
+      this.showRenameConfigModal = false;
+      this.renameConfigName = '';
+      this.selectedConfigIdForRename = null;
+      this.checkDirty();
+      message.success('Config rename pending, click Save to apply');
     },
 
     async handleExportConfigs() {
@@ -462,7 +549,12 @@ export default {
       const hasAlwaysOnTopChange = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
       const hasCustomTextsChange = JSON.stringify(this.customTexts) !== JSON.stringify(this.originalCustomTexts);
       const hasPasswordChange = this.pendingPasswordChange;
-      this.isDirty = hasAdds || hasDeletes || hasEdits || hasHistoryClear || hasDurationChange || hasCustomTextsChange || hasPasswordChange || hasAlwaysOnTopChange;
+      const hasConfigOps = this.pendingConfigCreates.length > 0 ||
+        this.pendingConfigDeletes.length > 0 ||
+        this.pendingConfigRenames.length > 0 ||
+        this.pendingConfigCopies.length > 0 ||
+        this.pendingConfigSwitchId !== null;
+      this.isDirty = hasAdds || hasDeletes || hasEdits || hasHistoryClear || hasDurationChange || hasCustomTextsChange || hasPasswordChange || hasAlwaysOnTopChange || hasConfigOps;
     },
     async handleAddItem() {
       if (!this.newItemName.trim()) return;
@@ -743,6 +835,34 @@ export default {
         this.pendingNewPassword = '';
       }
 
+      for (const create of this.pendingConfigCreates) {
+        const result = await createConfig(create.name);
+        if (result.config && result.config.id !== undefined) {
+          if (this.pendingConfigSwitchId === create.tempId) {
+            await switchConfig(result.config.id);
+          }
+        }
+      }
+
+      for (const copy of this.pendingConfigCopies) {
+        await copyConfig(copy.sourceId, copy.newName);
+      }
+
+      for (const id of this.pendingConfigDeletes) {
+        await deleteConfig(id);
+      }
+
+      for (const rename of this.pendingConfigRenames) {
+        await renameConfig(rename.id, rename.newName);
+      }
+
+      if (this.pendingConfigSwitchId !== null) {
+        const isPendingCreate = this.pendingConfigCreates.some(c => c.tempId === this.pendingConfigSwitchId);
+        if (!isPendingCreate) {
+          await switchConfig(this.pendingConfigSwitchId);
+        }
+      }
+
       if (this.pendingHistoryClear) {
         await resetHistory();
       }
@@ -919,12 +1039,17 @@ export default {
             <a-space style="width: 100%" direction="vertical">
               <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <a-select
-                  v-model:value="currentConfigId"
+                  :value="effectiveConfigId"
                   style="flex: 1; min-width: 200px"
-                  @change="handleSwitchConfig"
+                  @change="(val: any) => handleSwitchConfig(val)"
                 >
-                  <a-select-option v-for="config in configs" :key="config.id" :value="config.id">
-                    {{ config.name }} {{ config.is_active ? '(Active)' : '' }}
+                  <a-select-option v-for="config in displayConfigs" :key="config.id" :value="config.id">
+                    <span :style="{ textDecoration: config._isPending ? 'none' : (pendingConfigDeletes.includes(config.id) ? 'line-through' : 'none') }">
+                      {{ config._pendingNewName || config.name }}
+                      <template v-if="config._isPending && !pendingConfigDeletes.includes(config.id)">(Active)</template>
+                      <template v-else-if="config.is_active && !pendingConfigDeletes.includes(config.id)">(Active)</template>
+                      <a-tag v-if="config._isPending" color="blue" size="small" style="margin-left: 4px;">New</a-tag>
+                    </span>
                   </a-select-option>
                 </a-select>
                 <a-button type="primary" @click="showCreateConfigModal = true; newConfigName = ''">
@@ -933,20 +1058,20 @@ export default {
                 <a-button @click="showCopyConfigModal = true; copyConfigName = ''; selectedConfigIdForCopy = currentConfigId">
                   Copy From
                 </a-button>
-                <a-button 
-                  danger 
-                  @click="handleDeleteConfig(currentConfigId!)" 
-                  :disabled="configs.length <= 1 || currentConfigId === null"
+                <a-button
+                  danger
+                  @click="handleDeleteConfig(effectiveConfigId!)"
+                  :disabled="displayConfigs.length <= 1 || effectiveConfigId === null"
                 >
                   Delete
                 </a-button>
                 <a-button
-                  @click="showRenameConfigModal = true; renameConfigName = configs.find(c => c.id === currentConfigId)?.name || ''; selectedConfigIdForRename = currentConfigId"
-                  :disabled="currentConfigId === null"
+                  @click="showRenameConfigModal = true; renameConfigName = (displayConfigs.find(c => c.id === effectiveConfigId)?._pendingNewName || displayConfigs.find(c => c.id === effectiveConfigId)?.name || ''); selectedConfigIdForRename = effectiveConfigId"
+                  :disabled="effectiveConfigId === null"
                 >
                   Rename
                 </a-button>
-                <a-button type="primary" @click="showExportModal = true; exportSelectedConfigIds = [currentConfigId!]">
+                <a-button type="primary" @click="showExportModal = true; exportSelectedConfigIds = [effectiveConfigId!]">
                   Export
                 </a-button>
                 <a-button>
@@ -1209,9 +1334,9 @@ export default {
         <a-input v-model:value="copyConfigName" placeholder="Enter new config name" @keyup.enter="handleCopyConfig" />
       </a-form-item>
       <a-form-item label="Copy From">
-        <a-select v-model:value="selectedConfigIdForCopy">
-          <a-select-option v-for="config in configs" :key="config.id" :value="config.id">
-            {{ config.name }}
+        <a-select v-model:value="selectedConfigIdForCopy" placeholder="Select a source config">
+          <a-select-option v-for="config in displayConfigs.filter(c => !c._isPending && !pendingConfigDeletes.includes(c.id))" :key="config.id" :value="config.id">
+            {{ config._pendingNewName || config.name }}
           </a-select-option>
         </a-select>
       </a-form-item>
@@ -1233,9 +1358,9 @@ export default {
     <a-form layout="vertical">
       <a-form-item label="Select Configs to Export">
         <a-checkbox
-          :checked="exportSelectedConfigIds.length === configs.length"
-          :indeterminate="exportSelectedConfigIds.length > 0 && exportSelectedConfigIds.length < configs.length"
-          @change="(e: any) => exportSelectedConfigIds = e.target.checked ? configs.map((c: any) => c.id) : []"
+          :checked="exportSelectedConfigIds.length === displayConfigs.filter(c => !pendingConfigDeletes.includes(c.id)).length"
+          :indeterminate="exportSelectedConfigIds.length > 0 && exportSelectedConfigIds.length < displayConfigs.filter(c => !pendingConfigDeletes.includes(c.id)).length"
+          @change="(e: any) => exportSelectedConfigIds = e.target.checked ? displayConfigs.filter(c => !pendingConfigDeletes.includes(c.id)).map((c: any) => c.id) : []"
         >
           Select All
         </a-checkbox>
@@ -1243,9 +1368,11 @@ export default {
       <a-divider style="margin: 8px 0;" />
       <a-checkbox-group v-model:value="exportSelectedConfigIds" style="width: 100%">
         <a-row :gutter="[8, 8]">
-          <a-col :span="12" v-for="config in configs" :key="config.id">
+          <a-col :span="12" v-for="config in displayConfigs.filter(c => !pendingConfigDeletes.includes(c.id))" :key="config.id">
             <a-checkbox :value="config.id">
-              {{ config.name }} {{ config.is_active ? '(Active)' : '' }}
+              {{ config._pendingNewName || config.name }}
+              <template v-if="config._isPending">(Active)</template>
+              <template v-else-if="config.is_active">(Active)</template>
             </a-checkbox>
           </a-col>
         </a-row>
