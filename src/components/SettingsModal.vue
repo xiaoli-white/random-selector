@@ -73,6 +73,9 @@ export default {
       customTextFields: [
         { key: 'windowTitle', label: 'Window Title (System Title Bar)', fallback: 'Random Selector', section: 'main' },
         { key: 'appTitle', label: 'App Title (Main Interface)', fallback: 'Random Selector', section: 'main' },
+        { key: 'showVersion', label: 'Show Version', fallback: 'true', section: 'main', type: 'switch' },
+        { key: 'showAuthor', label: 'Show Author', fallback: 'true', section: 'main', type: 'switch' },
+        { key: 'authorName', label: 'Author Name', fallback: '', section: 'main' },
         { key: 'btnStart', label: 'Start Button', fallback: 'Start', section: 'main' },
         { key: 'btnStop', label: 'Stop Button', fallback: 'Stop', section: 'main' },
         { key: 'btnAuto', label: 'Auto Button', fallback: 'Auto', section: 'main' },
@@ -493,7 +496,7 @@ export default {
       this.checkDirty();
     },
     selectAllItems() {
-      this.selectedItemIds = this.items.map(i => i.id);
+      this.selectedItemIds = this.filteredItems.map(i => i.id);
     },
     deselectAllItems() {
       this.selectedItemIds = [];
@@ -956,7 +959,8 @@ export default {
           </a-form-item>
           <a-divider style="margin: 12px 0;" />
           <a-form-item label="Auto Duration (ms)">
-            <a-input-number v-model:value="autoDuration" :min="1000" :max="60000" :step="500" @change="checkDirty" style="width: 100%" />
+            <a-input-number v-model:value="autoDuration" :min="0" :max="60000" :step="500" @change="checkDirty" style="width: 100%" />
+            <span style="font-size: 12px; color: #999;">Set to 0 for single draw only</span>
           </a-form-item>
           <a-form-item label="Main Window Always On Top">
             <a-switch v-model:checked="mainWindowAlwaysOnTop" @change="checkDirty" />
@@ -964,7 +968,7 @@ export default {
         </a-form>
       </a-tab-pane>
       <a-tab-pane key="items" tab="Items">
-        <a-space class="mb-3">
+        <div class="items-toolbar mb-3">
           <a-button @click="showItemImportModal">Import</a-button>
           <a-popconfirm title="Clear all items?" @confirm="handleClearAll" ok-text="Yes" cancel-text="No">
             <a-button danger :disabled="items.length === 0">Clear All</a-button>
@@ -977,11 +981,11 @@ export default {
           <a-button @click="batchToggleDisable" :disabled="selectedItemIds.length === 0">
             Toggle Disable
           </a-button>
-          <a-space>
+          <span class="set-weight-group">
             <a-button :disabled="selectedItemIds.length === 0" @click="batchUpdateWeight">Set Weight</a-button>
             <a-input-number v-model:value="batchWeight" :min="0.01" :max="1000" :step="0.1" size="small" style="width: 80px" />
-          </a-space>
-        </a-space>
+          </span>
+        </div>
         <a-form layout="inline" class="mb-3">
           <a-form-item>
             <a-input v-model:value="newItemName" placeholder="Name" @keyup.enter="handleAddItem" style="width: 200px" />
@@ -1114,7 +1118,19 @@ export default {
         <a-form layout="vertical">
           <a-divider orientation="left">Main Interface</a-divider>
           <a-form-item v-for="field in mainInterfaceFields" :key="field.key" :label="field.label">
+            <a-switch
+              v-if="field.key === 'showAuthor'"
+              :checked="customTexts[field.key] === 'true'"
+              :disabled="!customTexts.authorName"
+              @change="(val: boolean) => updateCustomText(field.key, val ? 'true' : 'false')"
+            />
+            <a-switch
+              v-else-if="field.type === 'switch'"
+              :checked="customTexts[field.key] === 'true'"
+              @change="(val: boolean) => updateCustomText(field.key, val ? 'true' : 'false')"
+            />
             <a-input
+              v-else
               v-model:value="customTexts[field.key]"
               :placeholder="field.fallback"
               @change="updateCustomText(field.key, customTexts[field.key])"
@@ -1253,6 +1269,19 @@ export default {
 <style scoped>
 .mb-3 {
   margin-bottom: 12px;
+}
+
+.items-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.set-weight-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 button,

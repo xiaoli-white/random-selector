@@ -6,6 +6,9 @@ import { message } from 'ant-design-vue';
 import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
+// @ts-ignore
+import packageJson from '../package.json';
+
 interface SettingsModalInstance {
   openSettingsPanel: () => Promise<void>;
 }
@@ -29,6 +32,7 @@ export default {
       animationFrame: null as number | null,
       isAnimating: false,
       customTexts: {} as Record<string, string>,
+      appVersion: packageJson.version as string,
     };
   },
   computed: {
@@ -37,6 +41,15 @@ export default {
     },
     activeItems() {
       return this.items.filter(i => !i.disabled);
+    },
+    showVersion() {
+      return this.t('showVersion', 'true') === 'true';
+    },
+    showAuthor() {
+      return this.t('showAuthor', 'true') === 'true';
+    },
+    authorName() {
+      return this.t('authorName', '');
     },
   },
   async mounted() {
@@ -217,10 +230,16 @@ export default {
         return;
       }
       this.isAutoSelecting = true;
-      
+
+      if (this.autoDuration === 0) {
+        this.selectedItem = this.getRandomItemPreview();
+        this.stopAutoSelect();
+        return;
+      }
+
       const startTime = performance.now();
       const intervalDelay = 100;
-      
+
       const updatePreview = () => {
         if (this.activeItems.length === 0) return;
         const preview = this.getRandomItemPreview();
@@ -228,7 +247,7 @@ export default {
           this.selectedItem = { ...preview };
         }
       };
-      
+
       const tick = () => {
         if (!this.isAutoSelecting) return;
         updatePreview();
@@ -240,7 +259,7 @@ export default {
           this.stopAutoSelect();
         }
       };
-      
+
       updatePreview();
       this.intervalId = window.setTimeout(tick, intervalDelay) as unknown as number;
     },
@@ -291,7 +310,14 @@ export default {
         <div class="main-area">
           <a-card>
             <template #title>
-              <span class="card-title" @click="($refs.settingsModal as SettingsModalInstance)?.openSettingsPanel()">{{ t('appTitle', 'Random Selector') }}</span>
+              <div>
+                <span class="card-title" @click="($refs.settingsModal as SettingsModalInstance)?.openSettingsPanel()">{{ t('appTitle', 'Random Selector') }}</span>
+                <span v-if="showVersion || (showAuthor && authorName)" class="version-info">
+                  <span v-if="showVersion">v{{ appVersion }}</span>
+                  <span v-if="showVersion && showAuthor && authorName" class="version-sep">&nbsp;</span>
+                  <span v-if="showAuthor && authorName">by {{ authorName }}</span>
+                </span>
+              </div>
             </template>
             <div class="result-display">
               <a-typography-title :level="1">
@@ -370,6 +396,22 @@ body {
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none !important;
+}
+
+.ant-card-head-title .version-info {
+  font-size: 14px;
+  font-weight: normal;
+  color: #999;
+  margin-left: 12px;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none !important;
+}
+
+.ant-card-head-title .version-sep {
+  display: inline-block;
+  width: 0.3em;
 }
 
 .header-actions {
