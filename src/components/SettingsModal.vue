@@ -153,7 +153,7 @@ export default {
       return this.items.filter(item => item.name.toLowerCase().includes(query));
     },
     displayConfigs() {
-      let result = this.configs.filter(c => !this.pendingConfigDeletes.includes(c.id));
+      let result = this.configs;
 
       for (const rename of this.pendingConfigRenames) {
         const cfg = result.find(c => c.id === rename.id);
@@ -170,9 +170,8 @@ export default {
         result.push({ id: copy.tempId, name: copy.newName, is_active: 0, _isPending: true });
       }
 
-      const activeId = this.pendingConfigSwitchId !== null ? this.pendingConfigSwitchId : this.currentConfigId;
       for (const cfg of result) {
-        cfg._isActive = cfg.id === activeId;
+        cfg._isPendingDelete = this.pendingConfigDeletes.includes(cfg.id);
       }
 
       return result;
@@ -317,13 +316,18 @@ export default {
         return;
       }
 
-      if (!this.pendingConfigDeletes.includes(id)) {
+      const idx = this.pendingConfigDeletes.indexOf(id);
+      if (idx === -1) {
         this.pendingConfigDeletes.push(id);
         if (this.pendingConfigSwitchId === id) {
           this.pendingConfigSwitchId = null;
         }
         this.checkDirty();
         message.success('Config deletion pending, click Save to apply');
+      } else {
+        this.pendingConfigDeletes.splice(idx, 1);
+        this.checkDirty();
+        message.info('Config deletion cancelled');
       }
     },
 
@@ -334,6 +338,16 @@ export default {
         this.pendingConfigSwitchId = id;
       }
       this.checkDirty();
+    },
+
+    isConfigActive(config: any): boolean {
+      if (config._isPending) {
+        return false;
+      }
+      if (config._isPendingDelete) {
+        return false;
+      }
+      return config.is_active && !this.pendingConfigDeletes.includes(config.id);
     },
 
     async handleCopyConfig() {
@@ -569,17 +583,38 @@ export default {
       if (item) {
         if ((item as any).isNew) {
           this.pendingAdds = this.pendingAdds.filter(a => a.id !== id);
+          this.items = this.items.filter(i => i.id !== id);
         } else {
-          this.pendingDeletes.push(id);
+          const idx = this.pendingDeletes.indexOf(id);
+          if (idx === -1) {
+            this.pendingDeletes.push(id);
+            item._isDeleted = true;
+          } else {
+            this.pendingDeletes.splice(idx, 1);
+            item._isDeleted = false;
+          }
         }
-        this.items = this.items.filter(i => i.id !== id);
         this.checkDirty();
       }
     },
+    toggleDeleteItem(id: number) {
+      this.handleDeleteItem(id);
+    },
+    batchToggleDelete() {
+      if (this.selectedItemIds.length === 0) return;
+      for (const id of this.selectedItemIds) {
+        this.toggleDeleteItem(id);
+      }
+    },
     async handleClearAll() {
-      this.pendingDeletes = this.items.filter(i => !(i as any).isNew).map(i => i.id);
+      this.pendingDeletes = this.items.filter(i => !(i as any).isNew && !i._isDeleted).map(i => i.id);
+      this.items.forEach(item => {
+        if (!(item as any).isNew) {
+          item._isDeleted = true;
+        }
+      });
       this.pendingAdds = [];
-      this.items = [];
+      this.items = this.items.filter(i => !(i as any).isNew);
       this.checkDirty();
     },
     async handleResetHistory() {
@@ -591,13 +626,6 @@ export default {
       this.selectedItemIds = this.filteredItems.map(i => i.id);
     },
     deselectAllItems() {
-      this.selectedItemIds = [];
-    },
-    async batchDeleteItems() {
-      if (this.selectedItemIds.length === 0) return;
-      for (const id of this.selectedItemIds) {
-        await this.handleDeleteItem(id);
-      }
       this.selectedItemIds = [];
     },
     async batchUpdateWeight() {
@@ -845,7 +873,12 @@ export default {
       }
 
       for (const copy of this.pendingConfigCopies) {
-        await copyConfig(copy.sourceId, copy.newName);
+        const result = await copyConfig(copy.sourceId, copy.newName);
+        if (result.config && result.config.id !== undefined) {
+          if (this.pendingConfigSwitchId === copy.tempId) {
+            await switchConfig(result.config.id);
+          }
+        }
       }
 
       for (const id of this.pendingConfigDeletes) {
@@ -858,7 +891,8 @@ export default {
 
       if (this.pendingConfigSwitchId !== null) {
         const isPendingCreate = this.pendingConfigCreates.some(c => c.tempId === this.pendingConfigSwitchId);
-        if (!isPendingCreate) {
+        const isPendingCopy = this.pendingConfigCopies.some(c => c.tempId === this.pendingConfigSwitchId);
+        if (!isPendingCreate && !isPendingCopy) {
           await switchConfig(this.pendingConfigSwitchId);
         }
       }
@@ -1044,11 +1078,11 @@ export default {
                   @change="(val: any) => handleSwitchConfig(val)"
                 >
                   <a-select-option v-for="config in displayConfigs" :key="config.id" :value="config.id">
-                    <span :style="{ textDecoration: config._isPending ? 'none' : (pendingConfigDeletes.includes(config.id) ? 'line-through' : 'none') }">
+                    <span :style="{ textDecoration: config._isPendingDelete ? 'line-through' : 'none', color: config._isPendingDelete ? '#999' : 'inherit' }">
                       {{ config._pendingNewName || config.name }}
-                      <template v-if="config._isPending && !pendingConfigDeletes.includes(config.id)">(Active)</template>
-                      <template v-else-if="config.is_active && !pendingConfigDeletes.includes(config.id)">(Active)</template>
+                      <template v-if="isConfigActive(config)">(Active)</template>
                       <a-tag v-if="config._isPending" color="blue" size="small" style="margin-left: 4px;">New</a-tag>
+                      <a-tag v-if="config._isPendingDelete" color="red" size="small" style="margin-left: 4px;">Pending Delete</a-tag>
                     </span>
                   </a-select-option>
                 </a-select>
@@ -1085,7 +1119,6 @@ export default {
           <a-divider style="margin: 12px 0;" />
           <a-form-item label="Auto Duration (ms)">
             <a-input-number v-model:value="autoDuration" :min="0" :max="60000" :step="500" @change="checkDirty" style="width: 100%" />
-            <span style="font-size: 12px; color: #999;">Set to 0 for single draw only</span>
           </a-form-item>
           <a-form-item label="Main Window Always On Top">
             <a-switch v-model:checked="mainWindowAlwaysOnTop" @change="checkDirty" />
@@ -1100,9 +1133,7 @@ export default {
           </a-popconfirm>
           <a-button @click="selectAllItems">Select All</a-button>
           <a-button @click="deselectAllItems">Deselect All</a-button>
-          <a-popconfirm title="Delete selected items?" @confirm="batchDeleteItems" ok-text="Yes" cancel-text="No">
-            <a-button danger :disabled="selectedItemIds.length === 0">Delete ({{ selectedItemIds.length }})</a-button>
-          </a-popconfirm>
+          <a-button danger @click="batchToggleDelete" :disabled="selectedItemIds.length === 0">Toggle Delete ({{ selectedItemIds.length }})</a-button>
           <a-button @click="batchToggleDisable" :disabled="selectedItemIds.length === 0">
             Toggle Disable
           </a-button>
@@ -1142,7 +1173,7 @@ export default {
                 @pressEnter="saveAllEdits"
                 @dblclick.stop
               />
-              <span v-else @click.stop="startEditName(record)" @dblclick.stop style="cursor: pointer;">
+              <span v-else @click.stop="startEditName(record)" @dblclick.stop :style="{ cursor: 'pointer', textDecoration: record._isDeleted ? 'line-through' : 'none', color: record._isDeleted ? '#999' : 'inherit' }">
                 <span :style="{ backgroundColor: isNameChanged(record) ? '#fff3e0' : 'transparent', padding: '2px 4px', borderRadius: '2px' }">
                   {{ record.name }}
                   <a-tag v-if="isNameChanged(record)" color="orange" size="small" style="margin-left: 4px;">Modified</a-tag>
@@ -1172,17 +1203,20 @@ export default {
               </span>
             </template>
             <template v-else-if="column.key === 'disabled'">
-              <a-tag :color="record.disabled ? 'red' : 'green'">
+              <a-tag v-if="record._isDeleted" color="red">Pending Delete</a-tag>
+              <a-tag v-else :color="record.disabled ? 'red' : 'green'">
                 {{ record.disabled ? 'Disabled' : 'Active' }}
               </a-tag>
               <a-tag v-if="isDisabledChanged(record)" color="orange" size="small">Modified</a-tag>
             </template>
             <template v-else-if="column.key === 'actions'">
-              <a-button type="text" size="small" @click="updateItemDisabled(record.id, record.disabled ? 0 : 1)">
+              <a-button type="text" size="small" @click="updateItemDisabled(record.id, record.disabled ? 0 : 1)" :disabled="record._isDeleted">
                 {{ record.disabled ? 'Enable' : 'Disable' }}
               </a-button>
-              <a-popconfirm title="Delete?" @confirm="handleDeleteItem(record.id)" ok-text="Yes" cancel-text="No">
-                <a-button type="text" danger size="small">Delete</a-button>
+              <a-popconfirm :title="record._isDeleted ? 'Undelete?' : 'Delete?'" @confirm="handleDeleteItem(record.id)" ok-text="Yes" cancel-text="No">
+                <a-button type="text" size="small" :style="{ color: record._isDeleted ? '#52c41a' : '#ff4d4f' }">
+                  {{ record._isDeleted ? 'Undelete' : 'Delete' }}
+                </a-button>
               </a-popconfirm>
             </template>
           </template>
@@ -1368,11 +1402,10 @@ export default {
       <a-divider style="margin: 8px 0;" />
       <a-checkbox-group v-model:value="exportSelectedConfigIds" style="width: 100%">
         <a-row :gutter="[8, 8]">
-          <a-col :span="12" v-for="config in displayConfigs.filter(c => !pendingConfigDeletes.includes(c.id))" :key="config.id">
+          <a-col :span="12" v-for="config in displayConfigs.filter(c => !c._isPendingDelete)" :key="config.id">
             <a-checkbox :value="config.id">
               {{ config._pendingNewName || config.name }}
-              <template v-if="config._isPending">(Active)</template>
-              <template v-else-if="config.is_active">(Active)</template>
+              <template v-if="isConfigActive(config)">(Active)</template>
             </a-checkbox>
           </a-col>
         </a-row>
