@@ -70,6 +70,7 @@ export default {
       customTexts: {} as Record<string, string>,
       originalCustomTexts: {} as Record<string, string>,
       searchQuery: '',
+      itemFilter: 'all' as 'all' | 'active' | 'disabled',
       customTextFields: [
         { key: 'windowTitle', label: 'Window Title (System Title Bar)', fallback: 'Random Selector', section: 'main' },
         { key: 'appTitle', label: 'App Title (Main Interface)', fallback: 'Random Selector', section: 'main' },
@@ -148,9 +149,19 @@ export default {
       return this.customTextFields.filter(f => f.section === 'other');
     },
     filteredItems() {
-      if (!this.searchQuery.trim()) return this.items;
-      const query = this.searchQuery.toLowerCase();
-      return this.items.filter(item => item.name.toLowerCase().includes(query));
+      let result = this.items;
+      // Apply status filter
+      if (this.itemFilter === 'active') {
+        result = result.filter(item => !item.disabled);
+      } else if (this.itemFilter === 'disabled') {
+        result = result.filter(item => item.disabled);
+      }
+      // Apply search filter
+      if (this.searchQuery.trim()) {
+        const query = this.searchQuery.toLowerCase();
+        result = result.filter(item => item.name.toLowerCase().includes(query));
+      }
+      return result;
     },
     displayConfigs() {
       let result = this.configs;
@@ -1148,6 +1159,13 @@ export default {
           </a-form-item>
           <a-form-item>
             <a-button type="primary" @click="handleAddItem">Add</a-button>
+          </a-form-item>
+          <a-form-item>
+            <a-radio-group v-model:value="itemFilter" button-style="solid" size="small">
+              <a-radio-button value="all">All</a-radio-button>
+              <a-radio-button value="active">Active</a-radio-button>
+              <a-radio-button value="disabled">Disabled</a-radio-button>
+            </a-radio-group>
           </a-form-item>
           <a-form-item>
             <a-input v-model:value="searchQuery" placeholder="Search by name..." allow-clear style="width: 200px" />

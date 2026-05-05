@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { message } from 'ant-design-vue';
-import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop } from './db';
+import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop, getAllConfigs, switchConfig, getCurrentConfigId } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
 // @ts-ignore
@@ -33,6 +33,8 @@ export default {
       isAnimating: false,
       customTexts: {} as Record<string, string>,
       appVersion: packageJson.version as string,
+      configs: [] as any[],
+      currentConfigId: null as number | null,
     };
   },
   computed: {
@@ -61,6 +63,7 @@ export default {
     await this.loadItems();
     await this.loadHistory();
     await this.loadSettings();
+    await this.loadConfigs();
     await this.restoreFloatingWindowState();
     await this.setupWindowCloseHandler();
     this.setupVisibilityWatcher();
@@ -176,6 +179,25 @@ export default {
         await invoke('set_main_window_always_on_top', { alwaysOnTop });
       } catch (e) {
         console.error('Failed to set main window always on top:', e);
+      }
+    },
+    async loadConfigs() {
+      this.configs = await getAllConfigs();
+      this.currentConfigId = getCurrentConfigId();
+    },
+    async handleSwitchConfig(id: number) {
+      try {
+        const result = await switchConfig(id);
+        if (result.success) {
+          this.currentConfigId = id;
+          await this.loadItems();
+          await this.loadHistory();
+          message.success('Config switched successfully');
+        } else {
+          message.error(result.error || 'Failed to switch config');
+        }
+      } catch (error) {
+        message.error('Failed to switch config');
       }
     },
     getRandomItemPreview() {
@@ -319,6 +341,18 @@ export default {
                 </span>
               </div>
             </template>
+            <div class="config-switcher" v-if="configs.length > 0">
+              <a-select
+                :value="currentConfigId"
+                style="width: 250px"
+                @change="handleSwitchConfig"
+                size="large"
+              >
+                <a-select-option v-for="config in configs" :key="config.id" :value="config.id">
+                  {{ config.name }}
+                </a-select-option>
+              </a-select>
+            </div>
             <div class="result-display">
               <a-typography-title :level="1">
                 {{ selectedItem ? selectedItem.name : t('hintText', 'Click "Start" button') }}
@@ -412,6 +446,10 @@ body {
 .ant-card-head-title .version-sep {
   display: inline-block;
   width: 0.3em;
+}
+
+.config-switcher {
+  padding: 8px 0 0 0;
 }
 
 .header-actions {
