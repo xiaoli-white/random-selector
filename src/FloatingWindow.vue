@@ -13,7 +13,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { message } from 'ant-design-vue';
-import { getCustomTexts } from './db';
+import { getCustomTexts, onConfigChanged } from './db';
 
 export default {
   name: 'FloatingWindow',
@@ -44,6 +44,14 @@ export default {
 
     await listen('window-state-changed', async () => {
       await this.syncWindowState();
+    });
+
+    onConfigChanged(async () => {
+      await this.loadCustomTexts();
+    });
+
+    await listen('config-changed', async () => {
+      await this.loadCustomTexts();
     });
   },
   methods: {

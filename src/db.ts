@@ -11,6 +11,31 @@ export interface Item {
   config_id?: number;
 }
 
+let configChangedListeners: Array<() => void> = [];
+
+export function onConfigChanged(callback: () => void) {
+  configChangedListeners.push(callback);
+  return () => {
+    configChangedListeners = configChangedListeners.filter(l => l !== callback);
+  };
+}
+
+export async function emitConfigChanged() {
+  for (const listener of configChangedListeners) {
+    try {
+      listener();
+    } catch (e) {
+      console.error('Config changed listener error:', e);
+    }
+  }
+  try {
+    const { emit } = await import('@tauri-apps/api/event');
+    await emit('config-changed');
+  } catch (e) {
+    console.error('Failed to emit config-changed event:', e);
+  }
+}
+
 export interface AppSettings {
   key: string;
   value: string;
@@ -45,10 +70,10 @@ async function ensureDefaultConfig(): Promise<void> {
 
 async function migrateConfigIds(): Promise<void> {
   if (!db) return;
-  
+
   try {
     await db.execute('BEGIN TRANSACTION');
-    
+
     let defaultConfigId = currentConfigId;
     if (!defaultConfigId) {
       const result = await db.execute(
@@ -57,15 +82,32 @@ async function migrateConfigIds(): Promise<void> {
       );
       defaultConfigId = result.lastInsertId as number;
     }
-    
+
     await db.execute('UPDATE students SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
     await db.execute('UPDATE settings SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
     await db.execute('UPDATE history SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
-    
+
     await db.execute('COMMIT');
   } catch (e) {
     await db.execute('ROLLBACK');
     console.error('Config migration failed:', e);
+  }
+}
+
+async function ensureGlobalConfig(): Promise<void> {
+  if (!db) return;
+
+  const globalConfig = await db.select('SELECT id FROM configs WHERE id = 0 LIMIT 1') as any[];
+  
+  if (globalConfig.length === 0) {
+    try {
+      await db.execute(
+        'INSERT INTO configs (id, name, is_active) VALUES (0, $1, $2)',
+        ['__global_settings__', 0]
+      );
+    } catch (e) {
+      console.error('Failed to create global config:', e);
+    }
   }
 }
 
@@ -127,8 +169,10 @@ export async function initDatabase(): Promise<Database> {
   await db.execute('ALTER TABLE history ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
 
   await ensureDefaultConfig();
-  
+
   await migrateConfigIds();
+
+  await ensureGlobalConfig();
 
   return db;
 }
@@ -298,6 +342,24 @@ export async function setSetting(key: string, value: string): Promise<void> {
     'INSERT INTO settings (key, value, config_id) VALUES ($1, $2, $3) ON CONFLICT(key, config_id) DO UPDATE SET value = $2',
     [key, value, configId]
   );
+  await emitConfigChanged();
+}
+
+export async function getGlobalSetting(key: string): Promise<string | null> {
+  const database = await getDatabase();
+  const result = await database.select<AppSettings[]>(
+    'SELECT value FROM settings WHERE key = $1 AND config_id = 0',
+    [key]
+  );
+  return result.length > 0 ? result[0].value : null;
+}
+
+export async function setGlobalSetting(key: string, value: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute(
+    'INSERT INTO settings (key, value, config_id) VALUES ($1, $2, 0) ON CONFLICT(key, config_id) DO UPDATE SET value = $2',
+    [key, value]
+  );
 }
 
 export async function getAllSettings(): Promise<Record<string, string>> {
@@ -372,7 +434,7 @@ export function weightedRandomSelect(items: Item[]): Item | null {
 }
 
 export async function verifyPassword(input: string): Promise<boolean> {
-  const stored = await getSetting('admin_password_hash');
+  const stored = await getGlobalSetting('admin_password_hash');
   if (!stored) return false;
 
   try {
@@ -401,11 +463,11 @@ export async function setPassword(password: string): Promise<void> {
   const hash = Array.from(new Uint8Array(hashBuffer))
     .map(b => b.toString(16).padStart(2, '0')).join('');
 
-  await setSetting('admin_password_hash', salt + hash);
+  await setGlobalSetting('admin_password_hash', salt + hash);
 }
 
 export async function hasPassword(): Promise<boolean> {
-  const hash = await getSetting('admin_password_hash');
+  const hash = await getGlobalSetting('admin_password_hash');
   return !!hash;
 }
 
@@ -449,7 +511,7 @@ export function getCurrentConfigId(): number | null {
 
 export async function getAllConfigs(): Promise<Config[]> {
   const database = await getDatabase();
-  return await database.select<Config[]>('SELECT * FROM configs ORDER BY created_at');
+  return await database.select<Config[]>('SELECT * FROM configs WHERE id != 0 ORDER BY created_at');
 }
 
 export async function createConfig(name: string, isActive: boolean = false): Promise<{ success: boolean; error?: string; config?: Config }> {
@@ -487,10 +549,10 @@ export async function deleteConfig(id: number): Promise<{ success: boolean; erro
   }
 
   const database = await getDatabase();
-  
+
+  await database.execute('DELETE FROM history WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM students WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM settings WHERE config_id = $1', [id]);
-  await database.execute('DELETE FROM history WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM configs WHERE id = $1', [id]);
 
   return { success: true };
@@ -498,29 +560,30 @@ export async function deleteConfig(id: number): Promise<{ success: boolean; erro
 
 export async function switchConfig(id: number): Promise<{ success: boolean; error?: string }> {
   const database = await getDatabase();
-  
+
   const config = await database.select(
     'SELECT * FROM configs WHERE id = $1',
     [id]
   ) as any[];
-  
+
   if (config.length === 0) {
     return { success: false, error: 'Config not found' };
   }
-  
+
   if (currentConfigId) {
     await database.execute(
       'UPDATE configs SET is_active = 0 WHERE id = $1',
       [currentConfigId]
     );
   }
-  
+
   await database.execute(
     'UPDATE configs SET is_active = 1 WHERE id = $1',
     [id]
   );
-  
+
   currentConfigId = id;
+  await emitConfigChanged();
   return { success: true };
 }
 

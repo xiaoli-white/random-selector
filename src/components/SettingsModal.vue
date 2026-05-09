@@ -7,7 +7,7 @@ import {
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
   getAllConfigs, createConfig, deleteConfig, switchConfig, copyConfig, renameConfig,
-  getCurrentConfigId, exportConfigs, importConfig, ExportData
+  getCurrentConfigId, exportConfigs, importConfig, ExportData,
 } from '../db';
 
 export default {
@@ -150,13 +150,11 @@ export default {
     },
     filteredItems() {
       let result = this.items;
-      // Apply status filter
       if (this.itemFilter === 'active') {
         result = result.filter(item => !item.disabled);
       } else if (this.itemFilter === 'disabled') {
         result = result.filter(item => item.disabled);
       }
-      // Apply search filter
       if (this.searchQuery.trim()) {
         const query = this.searchQuery.toLowerCase();
         result = result.filter(item => item.name.toLowerCase().includes(query));
@@ -351,6 +349,10 @@ export default {
       this.checkDirty();
     },
 
+    isConfigPendingDelete(id: number | null): boolean {
+      if (id === null) return false;
+      return this.pendingConfigDeletes.includes(id);
+    },
     isConfigActive(config: any): boolean {
       if (config._isPending) {
         return false;
@@ -1103,13 +1105,7 @@ export default {
                 <a-button @click="showCopyConfigModal = true; copyConfigName = ''; selectedConfigIdForCopy = currentConfigId">
                   Copy From
                 </a-button>
-                <a-button
-                  danger
-                  @click="handleDeleteConfig(effectiveConfigId!)"
-                  :disabled="displayConfigs.length <= 1 || effectiveConfigId === null"
-                >
-                  Delete
-                </a-button>
+                <a-button danger @click="handleDeleteConfig(effectiveConfigId!)" :disabled="displayConfigs.length <= 1 || effectiveConfigId === null">Toggle Delete</a-button>
                 <a-button
                   @click="showRenameConfigModal = true; renameConfigName = (displayConfigs.find(c => c.id === effectiveConfigId)?._pendingNewName || displayConfigs.find(c => c.id === effectiveConfigId)?.name || ''); selectedConfigIdForRename = effectiveConfigId"
                   :disabled="effectiveConfigId === null"

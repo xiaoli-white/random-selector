@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { message } from 'ant-design-vue';
-import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop, getAllConfigs, switchConfig, getCurrentConfigId } from './db';
+import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop, getAllConfigs, switchConfig, getCurrentConfigId, onConfigChanged } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
 // @ts-ignore
@@ -67,9 +67,23 @@ export default {
     await this.restoreFloatingWindowState();
     await this.setupWindowCloseHandler();
     this.setupVisibilityWatcher();
-    
+
     await listen('custom-texts-updated', async () => {
       await this.loadCustomTexts();
+    });
+
+    onConfigChanged(async () => {
+      await this.loadItems();
+      await this.loadHistory();
+      await this.loadSettings();
+      await this.loadConfigs();
+    });
+
+    await listen('config-changed', async () => {
+      await this.loadItems();
+      await this.loadHistory();
+      await this.loadSettings();
+      await this.loadConfigs();
     });
   },
   beforeUnmount() {
