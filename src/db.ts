@@ -83,9 +83,9 @@ async function migrateConfigIds(): Promise<void> {
       defaultConfigId = result.lastInsertId as number;
     }
 
-    await db.execute('UPDATE students SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
-    await db.execute('UPDATE settings SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
-    await db.execute('UPDATE history SET config_id = $1 WHERE config_id IS NULL OR config_id = 0', [defaultConfigId]);
+    await db.execute('UPDATE students SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
+    await db.execute('UPDATE settings SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
+    await db.execute('UPDATE history SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
 
     await db.execute('COMMIT');
   } catch (e) {
