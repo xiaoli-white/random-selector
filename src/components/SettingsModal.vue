@@ -754,7 +754,7 @@ export default {
       for (const line of lines) {
         const parts = line.split(/[,\t]/);
         const name = parts[0].trim();
-        const weight = parts.length > 1 ? parseInt(parts[1]) || 1 : 1;
+        const weight = parts.length > 1 ? parseFloat(parts[1]) || 1 : 1;
         
         if (!name) continue;
         
@@ -920,14 +920,7 @@ export default {
       }
 
       for (const item of this.pendingAdds) {
-        await addItem(item.name, item.weight);
-        if (item.disabled) {
-          const dbItems = await getAllItems();
-          const dbItem = dbItems.find(i => i.name === item.name);
-          if (dbItem) {
-            await updateItemDisabled(dbItem.id!, item.disabled);
-          }
-        }
+        await addItem(item.name, item.weight, item.disabled);
       }
 
       for (const edit of this.pendingEdits) {

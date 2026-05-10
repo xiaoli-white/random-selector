@@ -193,7 +193,7 @@ export async function getAllItems(): Promise<Item[]> {
   );
 }
 
-export async function addItem(name: string, weight: number = 1): Promise<{ success: boolean; error?: string }> {
+export async function addItem(name: string, weight: number = 1, disabled: number = 0): Promise<{ success: boolean; error?: string }> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
 
@@ -218,8 +218,8 @@ export async function addItem(name: string, weight: number = 1): Promise<{ succe
   }
 
   await database.execute(
-    'INSERT INTO items (id, config_id, name, weight) VALUES ($1, $2, $3, $4)',
-    [nextId, configId, name, weight]
+    'INSERT INTO items (id, config_id, name, weight, disabled) VALUES ($1, $2, $3, $4, $5)',
+    [nextId, configId, name, weight, disabled]
   );
 
   return { success: true };
@@ -249,12 +249,14 @@ export async function updateItemName(id: number, name: string): Promise<{ succes
 
 export async function updateItemDisabled(id: number, disabled: number): Promise<void> {
   const database = await getDatabase();
-  await database.execute('UPDATE items SET disabled = $1 WHERE id = $2', [disabled, id]);
+  const configId = currentConfigId || 1;
+  await database.execute('UPDATE items SET disabled = $1 WHERE id = $2 AND config_id = $3', [disabled, id, configId]);
 }
 
 export async function deleteItem(id: number): Promise<void> {
   const database = await getDatabase();
-  await database.execute('DELETE FROM items WHERE id = $1', [id]);
+  const configId = currentConfigId || 1;
+  await database.execute('DELETE FROM items WHERE id = $1 AND config_id = $2', [id, configId]);
 }
 
 export async function clearAllItems(): Promise<void> {

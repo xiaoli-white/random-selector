@@ -73,9 +73,14 @@ export default {
           await invoke('show_main_window');
         }
         this.showMainInterface = !this.showMainInterface;
+        await this.emitWindowStateChange();
       } catch (error) {
         message.error(this.t('errorToggleWindow', 'Failed to toggle main window'));
       }
+    },
+    async emitWindowStateChange() {
+      const { emit } = await import('@tauri-apps/api/event');
+      await emit('window-state-changed');
     },
   },
 };

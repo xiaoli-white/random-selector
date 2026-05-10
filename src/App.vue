@@ -88,9 +88,7 @@ export default {
   },
   beforeUnmount() {
     this.stopAutoSelect();
-    if (this.animationFrame) {
-      cancelAnimationFrame(this.animationFrame);
-    }
+    this.stopAnimation();
     this.saveFloatingWindowState();
   },
   methods: {
@@ -143,24 +141,17 @@ export default {
     },
     setupVisibilityWatcher() {
       const appWindow = getCurrentWindow();
+      let lastKnownState = true;
 
       setInterval(async () => {
         try {
           const isVisible = await appWindow.isVisible();
           const isMinimized = await appWindow.isMinimized();
-          if (!isVisible && !isMinimized) {
-            if (this.showMainInterface) {
-              this.showMainInterface = false;
-              await invoke('hide_main_window');
-            }
-          } else if (isMinimized) {
-            if (this.showMainInterface) {
-              this.showMainInterface = false;
-            }
-          } else {
-            if (!this.showMainInterface) {
-              this.showMainInterface = true;
-            }
+          const currentState = isVisible && !isMinimized;
+
+          if (currentState !== lastKnownState) {
+            lastKnownState = currentState;
+            this.showMainInterface = currentState;
           }
         } catch (e) {
         }
@@ -216,7 +207,7 @@ export default {
     },
     getRandomItemPreview() {
       if (this.activeItems.length === 0) return null;
-      return weightedRandomSelect(this.items);
+      return weightedRandomSelect(this.activeItems);
     },
     async recordSelectedItem() {
       if (!this.selectedItem) return;
@@ -249,14 +240,14 @@ export default {
       const animate = () => {
         if (!this.isAnimating) return;
         this.selectedItem = this.getRandomItemPreview();
-        this.animationFrame = requestAnimationFrame(() => setTimeout(animate, delay));
+        this.animationFrame = window.setTimeout(animate, delay) as unknown as number;
       };
       animate();
     },
     stopAnimation() {
       this.isAnimating = false;
       if (this.animationFrame) {
-        cancelAnimationFrame(this.animationFrame);
+        clearTimeout(this.animationFrame);
         this.animationFrame = null;
       }
     },
@@ -268,7 +259,10 @@ export default {
       this.isAutoSelecting = true;
 
       if (this.autoDuration === 0) {
-        this.selectedItem = this.getRandomItemPreview();
+        const item = this.getRandomItemPreview();
+        if (item) {
+          this.selectedItem = { ...item };
+        }
         this.stopAutoSelect();
         return;
       }
