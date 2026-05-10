@@ -93,6 +93,9 @@ async fn set_main_window_always_on_top(app: tauri::AppHandle, always_on_top: boo
 
 #[tauri::command]
 async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    for window in app.webview_windows() {
+        let _ = window.1.hide();
+    }
     app.exit(0);
     Ok(())
 }
@@ -137,6 +140,14 @@ async fn emit_custom_texts_updated(app: tauri::AppHandle) -> Result<(), String> 
     Ok(())
 }
 
+#[tauri::command]
+async fn force_reload(app: tauri::AppHandle) -> Result<(), String> {
+    for window in app.webview_windows() {
+        let _ = window.1.eval("window.location.reload()");
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -147,9 +158,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
+                let _ = window.unminimize();
                 let _ = window.set_focus();
             }
             MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
+            let _ = update_tray_menu_state(app);
         }))
         .setup(|app| {
             let toggle_i = MenuItem::with_id(app, "toggle_main", "Toggle Main", true, None::<&str>)?;
@@ -236,7 +249,8 @@ pub fn run() {
             is_main_window_visible,
             get_exe_dir,
             get_db_path,
-            emit_custom_texts_updated
+            emit_custom_texts_updated,
+            force_reload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

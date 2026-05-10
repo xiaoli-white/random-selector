@@ -1072,6 +1072,14 @@ export default {
       if (!original) return false;
       return record.disabled !== original.disabled;
     },
+    async handleForceReload() {
+      try {
+        await invoke('force_reload');
+        message.success('Application reloading...');
+      } catch (e) {
+        message.error('Failed to reload application');
+      }
+    },
   },
   beforeUnmount() {}
 };
@@ -1082,6 +1090,10 @@ export default {
     <a-tabs v-model:activeKey="settingsTab">
       <a-tab-pane key="general" tab="General">
         <a-form layout="vertical">
+          <a-form-item label="Force Reload">
+            <a-button danger @click="handleForceReload">Force Reload Application</a-button>
+          </a-form-item>
+          <a-divider style="margin: 12px 0;" />
           <a-form-item label="Configuration">
             <a-space style="width: 100%" direction="vertical">
               <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
