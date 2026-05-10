@@ -83,7 +83,7 @@ async function migrateConfigIds(): Promise<void> {
       defaultConfigId = result.lastInsertId as number;
     }
 
-    await db.execute('UPDATE students SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
+    await db.execute('UPDATE items SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
     await db.execute('UPDATE settings SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
     await db.execute('UPDATE history SET config_id = $1 WHERE config_id IS NULL', [defaultConfigId]);
 
@@ -129,7 +129,7 @@ export async function initDatabase(): Promise<Database> {
   `);
 
   await db.execute(`
-    CREATE TABLE IF NOT EXISTS students (
+    CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       config_id INTEGER NOT NULL DEFAULT 1,
       name TEXT NOT NULL,
@@ -141,8 +141,8 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
-  await db.execute('ALTER TABLE students ADD COLUMN disabled INTEGER DEFAULT 0').catch(() => {});
-  await db.execute('ALTER TABLE students ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
+  await db.execute('ALTER TABLE items ADD COLUMN disabled INTEGER DEFAULT 0').catch(() => {});
+  await db.execute('ALTER TABLE items ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -158,11 +158,11 @@ export async function initDatabase(): Promise<Database> {
     CREATE TABLE IF NOT EXISTS history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       config_id INTEGER NOT NULL DEFAULT 1,
-      student_id INTEGER NOT NULL,
-      student_name TEXT NOT NULL,
+      item_id INTEGER NOT NULL,
+      item_name TEXT NOT NULL,
       selected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (config_id) REFERENCES configs(id),
-      FOREIGN KEY (student_id) REFERENCES students(id)
+      FOREIGN KEY (item_id) REFERENCES items(id)
     )
   `);
 
@@ -188,7 +188,7 @@ export async function getAllItems(): Promise<Item[]> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
   return await database.select<Item[]>(
-    'SELECT * FROM students WHERE config_id = $1 ORDER BY id',
+    'SELECT * FROM items WHERE config_id = $1 ORDER BY id',
     [configId]
   );
 }
@@ -198,7 +198,7 @@ export async function addItem(name: string, weight: number = 1): Promise<{ succe
   const configId = currentConfigId || 1;
 
   const existing = await database.select<{id: number}[]>(
-    'SELECT id FROM students WHERE name = $1 AND config_id = $2',
+    'SELECT id FROM items WHERE name = $1 AND config_id = $2',
     [name, configId]
   );
 
@@ -207,7 +207,7 @@ export async function addItem(name: string, weight: number = 1): Promise<{ succe
   }
 
   const result = await database.select<{id: number}[]>(
-    'SELECT id FROM students WHERE config_id = $1 ORDER BY id',
+    'SELECT id FROM items WHERE config_id = $1 ORDER BY id',
     [configId]
   );
 
@@ -218,7 +218,7 @@ export async function addItem(name: string, weight: number = 1): Promise<{ succe
   }
 
   await database.execute(
-    'INSERT INTO students (id, config_id, name, weight) VALUES ($1, $2, $3, $4)',
+    'INSERT INTO items (id, config_id, name, weight) VALUES ($1, $2, $3, $4)',
     [nextId, configId, name, weight]
   );
 
@@ -227,7 +227,7 @@ export async function addItem(name: string, weight: number = 1): Promise<{ succe
 
 export async function updateItemWeight(id: number, weight: number): Promise<void> {
   const database = await getDatabase();
-  await database.execute('UPDATE students SET weight = $1 WHERE id = $2', [weight, id]);
+  await database.execute('UPDATE items SET weight = $1 WHERE id = $2', [weight, id]);
 }
 
 export async function updateItemName(id: number, name: string): Promise<{ success: boolean; error?: string }> {
@@ -235,7 +235,7 @@ export async function updateItemName(id: number, name: string): Promise<{ succes
   const configId = currentConfigId || 1;
 
   const existing = await database.select<{id: number}[]>(
-    'SELECT id FROM students WHERE name = $1 AND id != $2 AND config_id = $3',
+    'SELECT id FROM items WHERE name = $1 AND id != $2 AND config_id = $3',
     [name, id, configId]
   );
 
@@ -243,25 +243,25 @@ export async function updateItemName(id: number, name: string): Promise<{ succes
     return { success: false, error: 'Name already exists' };
   }
 
-  await database.execute('UPDATE students SET name = $1 WHERE id = $2 AND config_id = $3', [name, id, configId]);
+  await database.execute('UPDATE items SET name = $1 WHERE id = $2 AND config_id = $3', [name, id, configId]);
   return { success: true };
 }
 
 export async function updateItemDisabled(id: number, disabled: number): Promise<void> {
   const database = await getDatabase();
-  await database.execute('UPDATE students SET disabled = $1 WHERE id = $2', [disabled, id]);
+  await database.execute('UPDATE items SET disabled = $1 WHERE id = $2', [disabled, id]);
 }
 
 export async function deleteItem(id: number): Promise<void> {
   const database = await getDatabase();
-  await database.execute('DELETE FROM students WHERE id = $1', [id]);
+  await database.execute('DELETE FROM items WHERE id = $1', [id]);
 }
 
 export async function clearAllItems(): Promise<void> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
   await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
-  await database.execute('DELETE FROM students WHERE config_id = $1', [configId]);
+  await database.execute('DELETE FROM items WHERE config_id = $1', [configId]);
 }
 
 export async function importFromText(text: string): Promise<{ success: boolean; count: number; errors: string[]; items: Array<{name: string, weight: number}> }> {
@@ -296,7 +296,7 @@ export async function importFromTextToDb(text: string): Promise<{ success: boole
 
   for (const item of items) {
     const existing = await database.select<{id: number}[]>(
-      'SELECT id FROM students WHERE name = $1 AND config_id = $2',
+      'SELECT id FROM items WHERE name = $1 AND config_id = $2',
       [item.name, configId]
     );
 
@@ -306,7 +306,7 @@ export async function importFromTextToDb(text: string): Promise<{ success: boole
     }
 
     const result = await database.select<{id: number}[]>(
-      'SELECT id FROM students WHERE config_id = $1 ORDER BY id',
+      'SELECT id FROM items WHERE config_id = $1 ORDER BY id',
       [configId]
     );
     let nextId = 1;
@@ -316,7 +316,7 @@ export async function importFromTextToDb(text: string): Promise<{ success: boole
     }
 
     await database.execute(
-      'INSERT INTO students (id, config_id, name, weight) VALUES ($1, $2, $3, $4)',
+      'INSERT INTO items (id, config_id, name, weight) VALUES ($1, $2, $3, $4)',
       [nextId, configId, item.name, item.weight]
     );
     count++;
@@ -387,16 +387,16 @@ export async function saveAllSettings(settings: Record<string, string>): Promise
   }
 }
 
-export async function addHistoryRecord(studentId: number, studentName: string): Promise<void> {
+export async function addHistoryRecord(itemId: number, itemName: string): Promise<void> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
   await database.execute(
-    'INSERT INTO history (config_id, student_id, student_name) VALUES ($1, $2, $3)',
-    [configId, studentId, studentName]
+    'INSERT INTO history (config_id, item_id, item_name) VALUES ($1, $2, $3)',
+    [configId, itemId, itemName]
   );
   await database.execute(
-    'UPDATE students SET selected_count = selected_count + 1 WHERE id = $1 AND config_id = $2',
-    [studentId, configId]
+    'UPDATE items SET selected_count = selected_count + 1 WHERE id = $1 AND config_id = $2',
+    [itemId, configId]
   );
 }
 
@@ -413,7 +413,7 @@ export async function resetHistory(): Promise<void> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
   await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
-  await database.execute('UPDATE students SET selected_count = 0 WHERE config_id = $1', [configId]);
+  await database.execute('UPDATE items SET selected_count = 0 WHERE config_id = $1', [configId]);
 }
 
 export function weightedRandomSelect(items: Item[]): Item | null {
@@ -551,7 +551,7 @@ export async function deleteConfig(id: number): Promise<{ success: boolean; erro
   const database = await getDatabase();
 
   await database.execute('DELETE FROM history WHERE config_id = $1', [id]);
-  await database.execute('DELETE FROM students WHERE config_id = $1', [id]);
+  await database.execute('DELETE FROM items WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM settings WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM configs WHERE id = $1', [id]);
 
@@ -615,15 +615,15 @@ export async function copyConfig(sourceId: number, newName: string): Promise<{ s
   
   const newConfigId = result.lastInsertId;
   
-  const students = await database.select(
-    'SELECT * FROM students WHERE config_id = $1',
+  const items = await database.select(
+    'SELECT * FROM items WHERE config_id = $1',
     [sourceId]
   ) as any[];
-  
-  for (const student of students) {
+
+  for (const item of items) {
     await database.execute(
-      'INSERT INTO students (config_id, name, weight, selected_count, disabled) VALUES ($1, $2, $3, $4, $5)',
-      [newConfigId, student.name, student.weight, student.selected_count, student.disabled]
+      'INSERT INTO items (config_id, name, weight, selected_count, disabled) VALUES ($1, $2, $3, $4, $5)',
+      [newConfigId, item.name, item.weight, item.selected_count, item.disabled]
     );
   }
   
@@ -673,7 +673,7 @@ export async function renameConfig(id: number, newName: string): Promise<{ succe
 
 export interface ExportedConfig {
   config: Config;
-  students: Item[];
+  items: Item[];
   settings: AppSettings[];
   history: any[];
 }
@@ -690,13 +690,13 @@ export async function exportConfig(configId: number): Promise<ExportedConfig | n
   const configs = await database.select('SELECT * FROM configs WHERE id = $1', [configId]) as any[];
   if (configs.length === 0) return null;
 
-  const students = await database.select('SELECT * FROM students WHERE config_id = $1', [configId]) as any[];
+  const items = await database.select('SELECT * FROM items WHERE config_id = $1', [configId]) as any[];
   const settings = await database.select('SELECT * FROM settings WHERE config_id = $1', [configId]) as any[];
   const history = await database.select('SELECT * FROM history WHERE config_id = $1', [configId]) as any[];
 
   return {
     config: configs[0] as Config,
-    students: students as Item[],
+    items: items as Item[],
     settings: settings as AppSettings[],
     history,
   };
@@ -737,7 +737,7 @@ export async function importConfig(exportData: ExportData): Promise<{ success: b
 
         if (existing.length > 0) {
           configId = existing[0].id;
-          await database.execute('DELETE FROM students WHERE config_id = $1', [configId]);
+          await database.execute('DELETE FROM items WHERE config_id = $1', [configId]);
           await database.execute('DELETE FROM settings WHERE config_id = $1', [configId]);
           await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
         } else {
@@ -748,10 +748,10 @@ export async function importConfig(exportData: ExportData): Promise<{ success: b
           configId = result.lastInsertId as number;
         }
 
-        for (const student of exportedConfig.students) {
+        for (const item of exportedConfig.items) {
           await database.execute(
-            'INSERT INTO students (config_id, name, weight, selected_count, disabled) VALUES ($1, $2, $3, $4, $5)',
-            [configId, student.name, student.weight, student.selected_count, student.disabled]
+            'INSERT INTO items (config_id, name, weight, selected_count, disabled) VALUES ($1, $2, $3, $4, $5)',
+            [configId, item.name, item.weight, item.selected_count, item.disabled]
           );
         }
 
@@ -764,8 +764,8 @@ export async function importConfig(exportData: ExportData): Promise<{ success: b
 
         for (const record of exportedConfig.history) {
           await database.execute(
-            'INSERT INTO history (config_id, student_id, student_name, selected_at) VALUES ($1, $2, $3, $4)',
-            [configId, record.student_id, record.student_name, record.selected_at]
+            'INSERT INTO history (config_id, item_id, item_name, selected_at) VALUES ($1, $2, $3, $4)',
+            [configId, record.item_id, record.item_name, record.selected_at]
           );
         }
 

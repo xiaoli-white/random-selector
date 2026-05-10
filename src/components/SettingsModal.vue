@@ -1254,7 +1254,7 @@ export default {
         <a-timeline>
           <a-timeline-item v-for="item in history" :key="item.id">
             <span class="history-time">{{ getLocalTime(item.selected_at) }}</span>
-            <span>{{ item.student_name }}</span>
+            <span>{{ item.item_name }}</span>
           </a-timeline-item>
         </a-timeline>
         <a-empty v-if="history.length === 0" description="No data" />
