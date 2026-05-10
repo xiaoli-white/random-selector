@@ -168,6 +168,7 @@ export default {
         const cfg = result.find(c => c.id === rename.id);
         if (cfg) {
           cfg._pendingNewName = rename.newName;
+          cfg._isPendingRename = true;
         }
       }
 
@@ -1107,6 +1108,7 @@ export default {
                       {{ config._pendingNewName || config.name }}
                       <template v-if="isConfigActive(config)">(Active)</template>
                       <a-tag v-if="config._isPending" color="blue" size="small" style="margin-left: 4px;">New</a-tag>
+                      <a-tag v-if="config._isPendingRename" color="orange" size="small" style="margin-left: 4px;">Pending Rename</a-tag>
                       <a-tag v-if="config._isPendingDelete" color="red" size="small" style="margin-left: 4px;">Pending Delete</a-tag>
                     </span>
                   </a-select-option>
