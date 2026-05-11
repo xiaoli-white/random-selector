@@ -1,6 +1,9 @@
 <script lang="ts">
 import { invoke } from '@tauri-apps/api/core';
 import { message } from 'ant-design-vue';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+dayjs.extend(utc);
 import {
   getAllItems, getHistory, getHistoryWithFilters, getSetting, setSetting,
   addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem,
@@ -647,18 +650,30 @@ export default {
         filters.itemName = this.historySearchQuery.trim();
       }
       if (this.historyStartTime) {
-        filters.startTime = typeof this.historyStartTime === 'string' 
-          ? this.historyStartTime 
-          : (this.historyStartTime && this.historyStartTime.format) 
-            ? this.historyStartTime.format('YYYY-MM-DD HH:mm:ss') 
-            : '';
+        let localTime = '';
+        if (typeof this.historyStartTime === 'string') {
+          localTime = this.historyStartTime;
+        } else if (this.historyStartTime && typeof this.historyStartTime.format === 'function') {
+          localTime = this.historyStartTime.format('YYYY-MM-DD HH:mm:ss');
+        } else if (this.historyStartTime instanceof Date) {
+          localTime = this.historyStartTime.toISOString().replace('T', ' ').substring(0, 19);
+        }
+        if (localTime) {
+          filters.startTime = dayjs(localTime, 'YYYY-MM-DD HH:mm:ss').utc().format('YYYY-MM-DD HH:mm:ss');
+        }
       }
       if (this.historyEndTime) {
-        filters.endTime = typeof this.historyEndTime === 'string' 
-          ? this.historyEndTime 
-          : (this.historyEndTime && this.historyEndTime.format) 
-            ? this.historyEndTime.format('YYYY-MM-DD HH:mm:ss') 
-            : '';
+        let localTime = '';
+        if (typeof this.historyEndTime === 'string') {
+          localTime = this.historyEndTime;
+        } else if (this.historyEndTime && typeof this.historyEndTime.format === 'function') {
+          localTime = this.historyEndTime.format('YYYY-MM-DD HH:mm:ss');
+        } else if (this.historyEndTime instanceof Date) {
+          localTime = this.historyEndTime.toISOString().replace('T', ' ').substring(0, 19);
+        }
+        if (localTime) {
+          filters.endTime = dayjs(localTime, 'YYYY-MM-DD HH:mm:ss').utc().format('YYYY-MM-DD HH:mm:ss');
+        }
       }
       this.history = await getHistoryWithFilters(filters);
     },
