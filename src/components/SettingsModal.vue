@@ -11,7 +11,7 @@ import {
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
   getAllConfigs, createConfig, deleteConfig, switchConfig, copyConfig, renameConfig,
   getCurrentConfigId, exportConfigs, importConfig, ExportData, HistoryFilter,
-  setGlobalSetting,
+  setGlobalSetting, applyDefaultCustomTexts, DEFAULT_AUTO_DURATION,
 } from '../db';
 
 export default {
@@ -211,7 +211,7 @@ export default {
       this.items = await getAllItems();
       this.history = await getHistory(50);
       const duration = await getSetting('autoDuration');
-      this.autoDuration = duration ? parseInt(duration) || 2000 : 2000;
+      this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
       this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
 
       this.originalItems = JSON.parse(JSON.stringify(this.items));
@@ -228,11 +228,7 @@ export default {
 
       this.hasPassword = await hasPassword();
       const loadedTexts = await getCustomTexts();
-      this.customTextFields.forEach(field => {
-        if (!loadedTexts[field.key]) {
-          loadedTexts[field.key] = field.fallback;
-        }
-      });
+      applyDefaultCustomTexts(loadedTexts);
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
 
@@ -262,7 +258,7 @@ export default {
       this.items = await getAllItems();
       this.history = await getHistory(50);
       const duration = await getSetting('autoDuration');
-      this.autoDuration = duration ? parseInt(duration) || 2000 : 2000;
+      this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
       this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
 
       this.originalItems = JSON.parse(JSON.stringify(this.items));
@@ -285,11 +281,7 @@ export default {
       this.nextTempConfigId = -1;
 
       const loadedTexts = await getCustomTexts();
-      this.customTextFields.forEach(field => {
-        if (!loadedTexts[field.key]) {
-          loadedTexts[field.key] = field.fallback;
-        }
-      });
+      applyDefaultCustomTexts(loadedTexts);
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
 
@@ -967,12 +959,27 @@ export default {
         await renameConfig(rename.id, rename.newName);
       }
 
+      const hadConfigSwitch = this.pendingConfigSwitchId !== null;
+
       if (this.pendingConfigSwitchId !== null) {
         const isPendingCreate = this.pendingConfigCreates.some(c => c.tempId === this.pendingConfigSwitchId);
         const isPendingCopy = this.pendingConfigCopies.some(c => c.tempId === this.pendingConfigSwitchId);
         if (!isPendingCreate && !isPendingCopy) {
           await switchConfig(this.pendingConfigSwitchId);
         }
+      }
+
+      if (hadConfigSwitch) {
+        const duration = await getSetting('autoDuration');
+        this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
+        this.originalAutoDuration = this.autoDuration;
+        this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
+        this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
+
+        const loadedTexts = await getCustomTexts();
+        applyDefaultCustomTexts(loadedTexts);
+        this.customTexts = loadedTexts;
+        this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
       }
 
       if (this.pendingHistoryClear) {
@@ -1002,19 +1009,19 @@ export default {
         }
       }
 
-       await setSetting('autoDuration', this.autoDuration.toString());
-       
-       const alwaysOnTopChanged = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
-       await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
-       if (alwaysOnTopChanged) {
-         try {
-           await invoke('set_main_window_always_on_top', { alwaysOnTop: this.mainWindowAlwaysOnTop });
-         } catch (e) {
-           console.error('Failed to apply always on top:', e);
-         }
-       }
-       
-       await saveCustomTexts(this.customTexts);
+      await setSetting('autoDuration', this.autoDuration.toString());
+
+      const alwaysOnTopChanged = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
+      await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
+      if (alwaysOnTopChanged) {
+        try {
+          await invoke('set_main_window_always_on_top', { alwaysOnTop: this.mainWindowAlwaysOnTop });
+        } catch (e) {
+          console.error('Failed to apply always on top:', e);
+        }
+      }
+
+      await saveCustomTexts(this.customTexts);
 
       await this.loadData();
       this.$emit('refresh');

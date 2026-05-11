@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { message } from 'ant-design-vue';
-import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop, getAllConfigs, switchConfig, getCurrentConfigId, onConfigChanged } from './db';
+import { initDatabase, getAllItems, getHistory, getSetting, weightedRandomSelect, addHistoryRecord, getCustomTexts, Item, getFloatingWindowState, setFloatingWindowState, getMainWindowAlwaysOnTop, getAllConfigs, switchConfig, getCurrentConfigId, onConfigChanged, applyDefaultCustomTexts, DEFAULT_AUTO_DURATION } from './db';
 import SettingsModal from './components/SettingsModal.vue';
 
 // @ts-ignore
@@ -93,7 +93,9 @@ export default {
   },
   methods: {
     async loadCustomTexts() {
-      this.customTexts = await getCustomTexts();
+      const loadedTexts = await getCustomTexts();
+      applyDefaultCustomTexts(loadedTexts);
+      this.customTexts = loadedTexts;
       const title = this.t('windowTitle', 'Random Selector');
       document.title = title;
       try {
@@ -178,7 +180,7 @@ export default {
     },
     async loadSettings() {
       const duration = await getSetting('autoDuration');
-      if (duration) this.autoDuration = parseInt(duration) || 2000;
+      this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
       const alwaysOnTop = await getMainWindowAlwaysOnTop();
       try {
         await invoke('set_main_window_always_on_top', { alwaysOnTop });
@@ -197,6 +199,8 @@ export default {
           this.currentConfigId = id;
           await this.loadItems();
           await this.loadHistory();
+          await this.loadSettings();
+          await this.loadCustomTexts();
           message.success('Config switched successfully');
         } else {
           message.error(result.error || 'Failed to switch config');

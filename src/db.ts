@@ -1,6 +1,39 @@
 import Database from '@tauri-apps/plugin-sql';
 import { invoke } from '@tauri-apps/api/core';
 
+export const DEFAULT_CUSTOM_TEXTS: Record<string, string> = {
+  windowTitle: 'Random Selector',
+  appTitle: 'Random Selector',
+  showVersion: 'true',
+  showAuthor: 'true',
+  authorName: '',
+  btnStart: 'Start',
+  btnStop: 'Stop',
+  btnAuto: 'Auto',
+  btnShowFloat: 'Show Float',
+  btnHideFloat: 'Hide Float',
+  btnShowMain: 'Show Main',
+  btnHideMain: 'Hide Main',
+  trayToggleMain: 'Toggle Main',
+  trayQuit: 'Quit',
+  hintText: 'Click "Start" button',
+  errorNoActiveItems: 'No active items available',
+  errorRecordFailed: 'Failed to record selection',
+  errorFloatingWindow: 'Failed to toggle floating window',
+  errorToggleWindow: 'Failed to toggle main window',
+};
+
+export function applyDefaultCustomTexts(texts: Record<string, string>): Record<string, string> {
+  for (const [key, fallback] of Object.entries(DEFAULT_CUSTOM_TEXTS)) {
+    if (!texts[key]) {
+      texts[key] = fallback;
+    }
+  }
+  return texts;
+}
+
+export const DEFAULT_AUTO_DURATION = 2000;
+
 export interface Item {
   id?: number;
   name: string;
