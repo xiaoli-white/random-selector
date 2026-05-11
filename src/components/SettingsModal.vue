@@ -1518,6 +1518,25 @@ export default {
 </template>
 
 <style scoped>
+* {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+.ant-input,
+.ant-input-number,
+.ant-select-selection-search-input,
+.ant-picker-input input {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 .mb-3 {
   margin-bottom: 12px;
 }
