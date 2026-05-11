@@ -11,6 +11,7 @@ import {
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
   getAllConfigs, createConfig, deleteConfig, switchConfig, copyConfig, renameConfig,
   getCurrentConfigId, exportConfigs, importConfig, ExportData, HistoryFilter,
+  setGlobalSetting,
 } from '../db';
 
 export default {
@@ -916,7 +917,7 @@ export default {
 
       if (this.pendingPasswordChange) {
         if (this.pendingRemovePassword) {
-          await setSetting('admin_password_hash', '');
+          await setGlobalSetting('admin_password_hash', '');
           this.hasPassword = false;
         } else {
           await setPassword(this.pendingNewPassword);
