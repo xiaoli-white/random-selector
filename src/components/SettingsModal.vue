@@ -2,12 +2,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { message } from 'ant-design-vue';
 import {
-  getAllItems, getHistory, getSetting, setSetting,
+  getAllItems, getHistory, getHistoryWithFilters, getSetting, setSetting,
   addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem,
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
   getAllConfigs, createConfig, deleteConfig, switchConfig, copyConfig, renameConfig,
-  getCurrentConfigId, exportConfigs, importConfig, ExportData,
+  getCurrentConfigId, exportConfigs, importConfig, ExportData, HistoryFilter,
 } from '../db';
 
 export default {
@@ -22,6 +22,9 @@ export default {
       history: [] as any[],
       originalItems: [] as any[],
       originalHistory: [] as any[],
+      historySearchQuery: '',
+      historyStartTime: '' as string | any,
+      historyEndTime: '' as string | any,
       autoDuration: 2000,
       originalAutoDuration: 2000,
       mainWindowAlwaysOnTop: false,
@@ -636,6 +639,38 @@ export default {
       this.history = [];
       this.checkDirty();
     },
+    async loadHistoryWithFilters() {
+      const filters: HistoryFilter = {
+        limit: 200,
+      };
+      if (this.historySearchQuery.trim()) {
+        filters.itemName = this.historySearchQuery.trim();
+      }
+      if (this.historyStartTime) {
+        filters.startTime = typeof this.historyStartTime === 'string' 
+          ? this.historyStartTime 
+          : (this.historyStartTime && this.historyStartTime.format) 
+            ? this.historyStartTime.format('YYYY-MM-DD HH:mm:ss') 
+            : '';
+      }
+      if (this.historyEndTime) {
+        filters.endTime = typeof this.historyEndTime === 'string' 
+          ? this.historyEndTime 
+          : (this.historyEndTime && this.historyEndTime.format) 
+            ? this.historyEndTime.format('YYYY-MM-DD HH:mm:ss') 
+            : '';
+      }
+      this.history = await getHistoryWithFilters(filters);
+    },
+    async handleHistorySearch() {
+      await this.loadHistoryWithFilters();
+    },
+    handleHistorySearchReset() {
+      this.historySearchQuery = '';
+      this.historyStartTime = '';
+      this.historyEndTime = '';
+      this.history = this.originalHistory;
+    },
     selectAllItems() {
       this.selectedItemIds = this.filteredItems.map(i => i.id);
     },
@@ -1244,6 +1279,41 @@ export default {
         </a-table>
       </a-tab-pane>
       <a-tab-pane key="history" tab="History">
+        <div class="history-search">
+          <a-row :gutter="16" style="margin-bottom: 16px;">
+            <a-col :span="7">
+              <a-input-search
+                v-model:value="historySearchQuery"
+                placeholder="Search by name"
+                allow-clear
+                @search="handleHistorySearch"
+                @clear="handleHistorySearch"
+              />
+            </a-col>
+            <a-col :span="5">
+              <a-date-picker
+                v-model:value="historyStartTime"
+                placeholder="Start time"
+                style="width: 100%"
+                format="YYYY-MM-DD HH:mm:ss"
+                show-time
+              />
+            </a-col>
+            <a-col :span="5">
+              <a-date-picker
+                v-model:value="historyEndTime"
+                placeholder="End time"
+                style="width: 100%"
+                format="YYYY-MM-DD HH:mm:ss"
+                show-time
+              />
+            </a-col>
+            <a-col :span="7">
+              <a-button type="primary" @click="handleHistorySearch" style="margin-right: 8px;">Search</a-button>
+              <a-button @click="handleHistorySearchReset">Reset</a-button>
+            </a-col>
+          </a-row>
+        </div>
         <a-timeline>
           <a-timeline-item v-for="item in history" :key="item.id">
             <span class="history-time">{{ getLocalTime(item.selected_at) }}</span>
@@ -1457,6 +1527,13 @@ export default {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.history-search {
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 4px;
+  margin-bottom: 16px;
 }
 
 .set-weight-group {

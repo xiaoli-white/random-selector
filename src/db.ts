@@ -411,6 +411,47 @@ export async function getHistory(limit: number = 50): Promise<any[]> {
   );
 }
 
+export interface HistoryFilter {
+  itemName?: string;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+}
+
+export async function getHistoryWithFilters(filters: HistoryFilter = {}): Promise<any[]> {
+  const database = await getDatabase();
+  const configId = currentConfigId || 1;
+  const limit = filters.limit || 100;
+
+  let sql = 'SELECT * FROM history WHERE config_id = $1';
+  const params: any[] = [configId];
+  let paramIndex = 2;
+
+  if (filters.itemName && filters.itemName.trim()) {
+    sql += ` AND item_name LIKE $${paramIndex}`;
+    params.push(`%${filters.itemName.trim()}%`);
+    paramIndex++;
+  }
+
+  if (filters.startTime) {
+    sql += ` AND selected_at >= $${paramIndex}`;
+    params.push(filters.startTime);
+    paramIndex++;
+  }
+
+  if (filters.endTime) {
+    sql += ` AND selected_at <= $${paramIndex}`;
+    params.push(filters.endTime);
+    paramIndex++;
+  }
+
+  sql += ' ORDER BY id DESC';
+  sql += ` LIMIT $${paramIndex}`;
+  params.push(limit);
+
+  return await database.select(sql, params);
+}
+
 export async function resetHistory(): Promise<void> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
