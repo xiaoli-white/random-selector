@@ -119,8 +119,10 @@ export default {
       showExportModal: false,
       showConfigImportModal: false,
       exportSelectedConfigIds: [] as number[],
+      exportIncludeGlobalSettings: false,
       configImportText: '',
       configImportFileContent: null as string | null,
+      importIncludeGlobalSettings: false,
     };
   },
   computed: {
@@ -444,7 +446,7 @@ export default {
       }
 
       try {
-        const exportData = await exportConfigs(this.exportSelectedConfigIds);
+        const exportData = await exportConfigs(this.exportSelectedConfigIds, this.exportIncludeGlobalSettings);
         const jsonStr = JSON.stringify(exportData, null, 2);
 
         const { save } = await import('@tauri-apps/plugin-dialog');
@@ -459,9 +461,13 @@ export default {
         if (filePath) {
           const { writeTextFile } = await import('@tauri-apps/plugin-fs');
           await writeTextFile(filePath, jsonStr);
-          message.success(`Successfully exported ${exportData.configs.length} config(s) to ${filePath}`);
+          const countMsg = exportData.globalSettings && exportData.globalSettings.length > 0
+            ? `${exportData.configs.length} config(s) + global settings`
+            : `${exportData.configs.length} config(s)`;
+          message.success(`Successfully exported ${countMsg} to ${filePath}`);
           this.showExportModal = false;
           this.exportSelectedConfigIds = [];
+          this.exportIncludeGlobalSettings = false;
         }
       } catch (error) {
         console.error('Export failed:', error);
@@ -482,6 +488,7 @@ export default {
 
           this.configImportText = text;
           this.configImportFileContent = text;
+          this.importIncludeGlobalSettings = !!(exportData.globalSettings && exportData.globalSettings.length > 0);
           this.showConfigImportModal = true;
         } catch {
           message.error('Failed to parse export file');
@@ -498,7 +505,12 @@ export default {
       }
 
       try {
-        const exportData = JSON.parse(this.configImportFileContent) as ExportData;
+        let exportData = JSON.parse(this.configImportFileContent) as ExportData;
+
+        if (!this.importIncludeGlobalSettings) {
+          exportData = { ...exportData, globalSettings: undefined };
+        }
+
         const result = await importConfig(exportData);
 
         if (result.imported.length > 0) {
@@ -511,6 +523,7 @@ export default {
         this.showConfigImportModal = false;
         this.configImportText = '';
         this.configImportFileContent = null;
+        this.importIncludeGlobalSettings = false;
         await this.loadConfigs();
         await this.refreshConfigData();
         this.$emit('refresh');
@@ -1520,6 +1533,12 @@ export default {
           </a-col>
         </a-row>
       </a-checkbox-group>
+      <a-divider style="margin: 8px 0;" />
+      <a-form-item>
+        <a-checkbox v-model:checked="exportIncludeGlobalSettings">
+          Include Global Settings (password, always-on-top state, floating window state, etc.)
+        </a-checkbox>
+      </a-form-item>
       <a-alert type="info" message="Exported data includes all items, settings, and history for selected configs." show-icon />
     </a-form>
   </a-modal>
@@ -1529,6 +1548,11 @@ export default {
     <a-form layout="vertical">
       <a-alert type="warning" message="Importing will overwrite existing configs with the same name. History in existing configs will be cleared before import." show-icon />
       <a-divider style="margin: 12px 0;" />
+      <a-form-item>
+        <a-checkbox v-model:checked="importIncludeGlobalSettings">
+          Import Global Settings (password, custom texts, floating window state, etc.)
+        </a-checkbox>
+      </a-form-item>
       <a-form-item label="Preview">
         <a-textarea v-model:value="configImportText" :rows="8" readonly />
       </a-form-item>

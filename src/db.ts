@@ -701,9 +701,9 @@ export interface ExportedConfig {
 }
 
 export interface ExportData {
-  version: number;
   exportedAt: string;
   configs: ExportedConfig[];
+  globalSettings?: AppSettings[];
 }
 
 export async function exportConfig(configId: number): Promise<ExportedConfig | null> {
@@ -724,7 +724,7 @@ export async function exportConfig(configId: number): Promise<ExportedConfig | n
   };
 }
 
-export async function exportConfigs(configIds: number[]): Promise<ExportData> {
+export async function exportConfigs(configIds: number[], includeGlobalSettings: boolean = false): Promise<ExportData> {
   const configs: ExportedConfig[] = [];
   for (const id of configIds) {
     const data = await exportConfig(id);
@@ -733,11 +733,20 @@ export async function exportConfigs(configIds: number[]): Promise<ExportData> {
     }
   }
 
-  return {
-    version: 1,
+  const result: ExportData = {
     exportedAt: new Date().toISOString(),
     configs,
   };
+
+  if (includeGlobalSettings) {
+    const database = await getDatabase();
+    const globalSettings = await database.select<AppSettings[]>(
+      'SELECT * FROM settings WHERE config_id = 0'
+    );
+    result.globalSettings = globalSettings;
+  }
+
+  return result;
 }
 
 export async function importConfig(exportData: ExportData): Promise<{ success: boolean; imported: string[]; errors: string[] }> {
@@ -794,6 +803,20 @@ export async function importConfig(exportData: ExportData): Promise<{ success: b
         imported.push(exportedConfig.config.name);
       } catch (e) {
         errors.push(`Failed to import config "${exportedConfig.config.name}": ${(e as Error).message}`);
+      }
+    }
+
+    if (exportData.globalSettings && exportData.globalSettings.length > 0) {
+      try {
+        for (const setting of exportData.globalSettings) {
+          await database.execute(
+            'INSERT INTO settings (key, value, config_id) VALUES ($1, $2, 0) ON CONFLICT(key, config_id) DO UPDATE SET value = $2',
+            [setting.key, setting.value]
+          );
+        }
+        imported.push('(Global Settings)');
+      } catch (e) {
+        errors.push(`Failed to import global settings: ${(e as Error).message}`);
       }
     }
 
