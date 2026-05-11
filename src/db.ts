@@ -206,20 +206,9 @@ export async function addItem(name: string, weight: number = 1, disabled: number
     return { success: false, error: 'Name already exists' };
   }
 
-  const result = await database.select<{id: number}[]>(
-    'SELECT id FROM items WHERE config_id = $1 ORDER BY id',
-    [configId]
-  );
-
-  let nextId = 1;
-  for (const row of result) {
-    if (row.id !== nextId) break;
-    nextId++;
-  }
-
   await database.execute(
-    'INSERT INTO items (id, config_id, name, weight, disabled) VALUES ($1, $2, $3, $4, $5)',
-    [nextId, configId, name, weight, disabled]
+    'INSERT INTO items (config_id, name, weight, disabled) VALUES ($1, $2, $3, $4)',
+    [configId, name, weight, disabled]
   );
 
   return { success: true };
@@ -307,19 +296,9 @@ export async function importFromTextToDb(text: string): Promise<{ success: boole
       continue;
     }
 
-    const result = await database.select<{id: number}[]>(
-      'SELECT id FROM items WHERE config_id = $1 ORDER BY id',
-      [configId]
-    );
-    let nextId = 1;
-    for (const row of result) {
-      if (row.id !== nextId) break;
-      nextId++;
-    }
-
     await database.execute(
-      'INSERT INTO items (id, config_id, name, weight) VALUES ($1, $2, $3, $4)',
-      [nextId, configId, item.name, item.weight]
+      'INSERT INTO items (config_id, name, weight) VALUES ($1, $2, $3)',
+      [configId, item.name, item.weight]
     );
     count++;
   }

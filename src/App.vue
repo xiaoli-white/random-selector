@@ -55,9 +55,9 @@ export default {
     },
   },
   async mounted() {
-    document.addEventListener('contextmenu', (e) => {
+    /*document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-    });
+    });*/
     await initDatabase();
     await this.loadCustomTexts();
     await this.loadItems();

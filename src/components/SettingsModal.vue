@@ -970,7 +970,10 @@ export default {
       }
 
       for (const item of this.pendingAdds) {
-        await addItem(item.name, item.weight, item.disabled);
+        const result = await addItem(item.name, item.weight, item.disabled);
+        if (!result.success) {
+          message.error(`Failed to add item "${item.name}": ${result.error}`);
+        }
       }
 
       for (const edit of this.pendingEdits) {
