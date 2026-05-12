@@ -564,6 +564,15 @@ export function getCurrentConfigId(): number | null {
   return currentConfigId;
 }
 
+export async function syncCurrentConfigId(): Promise<number | null> {
+  const database = await getDatabase();
+  const activeConfig = await database.select('SELECT id FROM configs WHERE is_active = 1 LIMIT 1') as any[];
+  if (activeConfig.length > 0) {
+    currentConfigId = activeConfig[0].id;
+  }
+  return currentConfigId;
+}
+
 export async function getAllConfigs(): Promise<Config[]> {
   const database = await getDatabase();
   return await database.select<Config[]>('SELECT * FROM configs WHERE id != 0 ORDER BY created_at');

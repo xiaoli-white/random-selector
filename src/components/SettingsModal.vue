@@ -980,6 +980,12 @@ export default {
         applyDefaultCustomTexts(loadedTexts);
         this.customTexts = loadedTexts;
         this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
+
+        try {
+          await invoke('emit_config_changed');
+        } catch (e) {
+          console.error('Failed to emit config changed:', e);
+        }
       }
 
       if (this.pendingHistoryClear) {

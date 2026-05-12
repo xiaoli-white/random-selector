@@ -201,6 +201,11 @@ export default {
           await this.loadHistory();
           await this.loadSettings();
           await this.loadCustomTexts();
+          try {
+            await invoke('emit_config_changed');
+          } catch (e) {
+            console.error('Failed to emit config changed:', e);
+          }
           message.success('Config switched successfully');
         } else {
           message.error(result.error || 'Failed to switch config');

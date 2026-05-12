@@ -141,6 +141,12 @@ async fn emit_custom_texts_updated(app: tauri::AppHandle) -> Result<(), String> 
 }
 
 #[tauri::command]
+async fn emit_config_changed(app: tauri::AppHandle) -> Result<(), String> {
+    app.emit("config-changed", ()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn force_reload(app: tauri::AppHandle) -> Result<(), String> {
     for window in app.webview_windows() {
         let _ = window.1.eval("window.location.reload()");
@@ -250,6 +256,7 @@ pub fn run() {
             get_exe_dir,
             get_db_path,
             emit_custom_texts_updated,
+            emit_config_changed,
             force_reload,
         ])
         .run(tauri::generate_context!())
