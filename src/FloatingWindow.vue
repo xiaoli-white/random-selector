@@ -1,5 +1,5 @@
 <template>
-  <div class="floating-window" data-tauri-drag-region>
+  <div v-if="isDataLoaded" class="floating-window" data-tauri-drag-region>
     <div class="drag-handle">
       <span class="drag-icon">⋮⋮</span>
     </div>
@@ -21,6 +21,7 @@ export default {
     return {
       showMainInterface: true,
       customTexts: {} as Record<string, string>,
+      isDataLoaded: false,
     };
   },
   computed: {
@@ -55,6 +56,8 @@ export default {
       await syncCurrentConfigId();
       await this.loadCustomTexts();
     });
+
+    this.isDataLoaded = true;
   },
   methods: {
     async loadCustomTexts() {

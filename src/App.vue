@@ -35,6 +35,7 @@ export default {
       appVersion: packageJson.version as string,
       configs: [] as any[],
       currentConfigId: null as number | null,
+      isDataLoaded: false,
     };
   },
   computed: {
@@ -85,6 +86,8 @@ export default {
       await this.loadSettings();
       await this.loadConfigs();
     });
+
+    this.isDataLoaded = true;
   },
   beforeUnmount() {
     this.stopAutoSelect();
@@ -231,6 +234,7 @@ export default {
       }
     },
     startManualSelect() {
+      if (this.isAutoSelecting) return;
       if (this.activeItems.length === 0) {
         message.warning(this.t('errorNoActiveItems', 'No active items available'));
         return;
@@ -261,6 +265,7 @@ export default {
       }
     },
     async startAutoSelect() {
+      if (this.isSelecting) return;
       if (this.activeItems.length === 0) {
         message.warning(this.t('errorNoActiveItems', 'No active items available'));
         return;
@@ -344,7 +349,7 @@ export default {
 
 <template>
   <div class="app-container">
-    <a-layout class="main-layout" v-show="showMainInterface">
+    <a-layout class="main-layout" v-if="isDataLoaded" v-show="showMainInterface">
       <a-layout-content class="content">
         <div class="main-area">
           <a-card>
@@ -376,13 +381,13 @@ export default {
               </a-typography-title>
             </div>
             <div class="select-actions">
-              <a-button v-if="!isSelecting" type="primary" size="large" @click="startManualSelect" :disabled="activeItems.length === 0" class="large-button">
+              <a-button v-if="!isSelecting" type="primary" size="large" @click="startManualSelect" :disabled="activeItems.length === 0 || isAutoSelecting" class="large-button">
                 {{ t('btnStart', 'Start') }}
               </a-button>
               <a-button v-else type="primary" danger size="large" @click="stopManualSelect" class="large-button">
                 {{ t('btnStop', 'Stop') }}
               </a-button>
-              <a-button type="primary" size="large" @click="startAutoSelect" :disabled="activeItems.length === 0 || isAutoSelecting" class="large-button">
+              <a-button type="primary" size="large" @click="startAutoSelect" :disabled="activeItems.length === 0 || isAutoSelecting || isSelecting" class="large-button">
                 {{ t('btnAuto', 'Auto') }}
               </a-button>
               <a-button @click="toggleFloating" type="primary" size="large" class="large-button">
