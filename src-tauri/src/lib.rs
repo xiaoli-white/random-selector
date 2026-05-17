@@ -62,6 +62,7 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     }
     MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
     let _ = update_tray_menu_state(&app);
+    let _ = app.emit("window-state-changed", ());
     Ok(())
 }
 
@@ -72,6 +73,7 @@ async fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
     }
     MAIN_WINDOW_VISIBLE.store(false, Ordering::SeqCst);
     let _ = update_tray_menu_state(&app);
+    let _ = app.emit("window-state-changed", ());
     Ok(())
 }
 
@@ -169,6 +171,7 @@ pub fn run() {
             }
             MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
             let _ = update_tray_menu_state(app);
+            let _ = app.emit("window-state-changed", ());
         }))
         .setup(|app| {
             let toggle_i = MenuItem::with_id(app, "toggle_main", "Toggle Main", true, None::<&str>)?;
@@ -213,6 +216,7 @@ pub fn run() {
                                 MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
                             }
                         }
+                        let _ = app.emit("window-state-changed", ());
                     }
                     "quit" => {
                         app.exit(0);
@@ -237,6 +241,7 @@ pub fn run() {
                                 MAIN_WINDOW_VISIBLE.store(true, Ordering::SeqCst);
                             }
                         }
+                        let _ = app.emit("window-state-changed", ());
                     }
                 })
                 .build(app)?;
