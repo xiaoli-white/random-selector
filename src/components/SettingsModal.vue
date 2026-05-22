@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 dayjs.extend(utc);
 import {
-  getAllItems, getHistory, getHistoryWithFilters, getSetting, setSetting,
+  getAllItems, getHistoryWithFilters, getHistoryCount, getSetting, setSetting,
   addItem, updateItemWeight, updateItemName, updateItemDisabled, deleteItem,
   importFromText, resetHistory, hasPassword, verifyPassword, setPassword,
   getCustomTexts, saveCustomTexts, getMainWindowAlwaysOnTop, setMainWindowAlwaysOnTop,
@@ -24,11 +24,15 @@ export default {
     return {
       items: [] as any[],
       history: [] as any[],
+      historyLoaded: false,
       originalItems: [] as any[],
       originalHistory: [] as any[],
       historySearchQuery: '',
       historyStartTime: '' as string | any,
       historyEndTime: '' as string | any,
+      historyPage: 1,
+      historyPageSize: 20,
+      historyTotal: 0,
       autoDuration: 2000,
       originalAutoDuration: 2000,
       mainWindowAlwaysOnTop: false,
@@ -204,18 +208,25 @@ export default {
       if (val) {
         this.loadData();
       }
+    },
+    async settingsTab(val) {
+      if (val === 'history' && !this.historyLoaded) {
+        this.historyLoaded = true;
+        await this.loadHistoryPage(1);
+      }
     }
   },
   methods: {
     async loadData() {
       this.items = await getAllItems();
-      this.history = await getHistory(50);
+      this.history = [];
+      this.historyLoaded = false;
       const duration = await getSetting('autoDuration');
       this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
       this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
 
       this.originalItems = JSON.parse(JSON.stringify(this.items));
-      this.originalHistory = JSON.parse(JSON.stringify(this.history));
+      this.originalHistory = [];
       this.originalAutoDuration = this.autoDuration;
       this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
       this.pendingAdds = [];
@@ -247,6 +258,11 @@ export default {
 
       await this.loadConfigs();
       this.originalConfigs = JSON.parse(JSON.stringify(this.configs));
+
+      if (this.settingsTab === 'history') {
+        this.historyLoaded = true;
+        await this.loadHistoryPage(1);
+      }
     },
 
     async loadConfigs() {
@@ -256,13 +272,14 @@ export default {
 
     async refreshConfigData() {
       this.items = await getAllItems();
-      this.history = await getHistory(50);
+      this.history = [];
+      this.historyLoaded = false;
       const duration = await getSetting('autoDuration');
       this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
       this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
 
       this.originalItems = JSON.parse(JSON.stringify(this.items));
-      this.originalHistory = JSON.parse(JSON.stringify(this.history));
+      this.originalHistory = [];
       this.originalAutoDuration = this.autoDuration;
       this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
       this.pendingAdds = [];
@@ -287,6 +304,11 @@ export default {
 
       await this.loadConfigs();
       this.originalConfigs = JSON.parse(JSON.stringify(this.configs));
+
+      if (this.settingsTab === 'history') {
+        this.historyLoaded = true;
+        await this.loadHistoryPage(1);
+      }
     },
 
     async handleCreateConfig() {
@@ -648,10 +670,8 @@ export default {
       this.history = [];
       this.checkDirty();
     },
-    async loadHistoryWithFilters() {
-      const filters: HistoryFilter = {
-        limit: 200,
-      };
+    buildHistoryFilters(): HistoryFilter {
+      const filters: HistoryFilter = {};
       if (this.historySearchQuery.trim()) {
         filters.itemName = this.historySearchQuery.trim();
       }
@@ -681,16 +701,28 @@ export default {
           filters.endTime = dayjs(localTime, 'YYYY-MM-DD HH:mm:ss').utc().format('YYYY-MM-DD HH:mm:ss');
         }
       }
+      return filters;
+    },
+    async loadHistoryPage(page: number) {
+      const filters = this.buildHistoryFilters();
+      filters.limit = this.historyPageSize;
+      filters.offset = (page - 1) * this.historyPageSize;
       this.history = await getHistoryWithFilters(filters);
+      this.historyTotal = await getHistoryCount(this.buildHistoryFilters());
+      this.historyPage = page;
+      this.originalHistory = JSON.parse(JSON.stringify(this.history));
     },
     async handleHistorySearch() {
-      await this.loadHistoryWithFilters();
+      await this.loadHistoryPage(1);
     },
     handleHistorySearchReset() {
       this.historySearchQuery = '';
       this.historyStartTime = '';
       this.historyEndTime = '';
-      this.history = this.originalHistory;
+      this.loadHistoryPage(1);
+    },
+    async handleHistoryPageChange(page: number) {
+      await this.loadHistoryPage(page);
     },
     selectAllItems() {
       this.selectedItemIds = this.filteredItems.map(i => i.id);
@@ -1366,6 +1398,15 @@ export default {
           </a-timeline-item>
         </a-timeline>
         <a-empty v-if="history.length === 0" description="No data" />
+        <a-pagination
+          v-if="historyTotal > historyPageSize"
+          v-model:current="historyPage"
+          :total="historyTotal"
+          :pageSize="historyPageSize"
+          :showSizeChanger="false"
+          @change="handleHistoryPageChange"
+          style="margin-top: 16px; text-align: center;"
+        />
         <a-divider />
         <a-popconfirm title="Clear history?" @confirm="handleResetHistory" ok-text="Yes" cancel-text="No">
           <a-button danger>Clear History</a-button>

@@ -60,18 +60,21 @@ export default {
       e.preventDefault();
     });
     await initDatabase();
-    await this.loadCustomTexts();
-    await this.loadItems();
-    await this.loadHistory();
-    await this.loadSettings();
-    await this.loadConfigs();
-    await this.restoreFloatingWindowState();
-    await this.setupWindowCloseHandler();
+
     this.setupVisibilityWatcher();
 
-    await listen('custom-texts-updated', async () => {
-      await this.loadCustomTexts();
-    });
+    await Promise.all([
+      this.setupWindowCloseHandler(),
+      listen('custom-texts-updated', async () => {
+        await this.loadCustomTexts();
+      }),
+      listen('config-changed', async () => {
+        await this.loadItems();
+        await this.loadHistory();
+        await this.loadSettings();
+        await this.loadConfigs();
+      }),
+    ]);
 
     onConfigChanged(async () => {
       await this.loadItems();
@@ -80,12 +83,15 @@ export default {
       await this.loadConfigs();
     });
 
-    await listen('config-changed', async () => {
-      await this.loadItems();
-      await this.loadHistory();
-      await this.loadSettings();
-      await this.loadConfigs();
-    });
+    await Promise.all([
+      this.loadCustomTexts(),
+      this.loadItems(),
+      this.loadSettings(),
+      this.loadConfigs(),
+      this.restoreFloatingWindowState(),
+    ]);
+
+    this.loadHistory();
 
     this.isDataLoaded = true;
   },

@@ -1,11 +1,13 @@
 <template>
-  <div v-if="isDataLoaded" class="floating-window" data-tauri-drag-region>
-    <div class="drag-handle">
-      <span class="drag-icon">⋮⋮</span>
-    </div>
-    <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
-      {{ toggleButtonText }}
-    </a-button>
+  <div class="floating-window" data-tauri-drag-region>
+    <template v-if="isDataLoaded">
+      <div class="drag-handle">
+        <span class="drag-icon">⋮⋮</span>
+      </div>
+      <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
+        {{ toggleButtonText }}
+      </a-button>
+    </template>
   </div>
 </template>
 
@@ -36,23 +38,23 @@ export default {
     document.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
-    await this.loadCustomTexts();
-    await this.syncWindowState();
 
-    await listen('custom-texts-updated', async () => {
-      await this.loadCustomTexts();
-    });
-
-    await listen('window-state-changed', async () => {
-      await this.syncWindowState();
-    });
+    await Promise.all([
+      this.loadCustomTexts(),
+      this.syncWindowState(),
+      listen('custom-texts-updated', async () => {
+        await this.loadCustomTexts();
+      }),
+      listen('window-state-changed', async () => {
+        await this.syncWindowState();
+      }),
+      listen('config-changed', async () => {
+        await syncCurrentConfigId();
+        await this.loadCustomTexts();
+      }),
+    ]);
 
     onConfigChanged(async () => {
-      await syncCurrentConfigId();
-      await this.loadCustomTexts();
-    });
-
-    await listen('config-changed', async () => {
       await syncCurrentConfigId();
       await this.loadCustomTexts();
     });

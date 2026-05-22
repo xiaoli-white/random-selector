@@ -428,40 +428,61 @@ export interface HistoryFilter {
   startTime?: string;
   endTime?: string;
   limit?: number;
+  offset?: number;
 }
 
-export async function getHistoryWithFilters(filters: HistoryFilter = {}): Promise<any[]> {
-  const database = await getDatabase();
-  const configId = currentConfigId || 1;
-  const limit = filters.limit || 100;
-
-  let sql = 'SELECT * FROM history WHERE config_id = $1';
+async function buildHistoryWhereClause(configId: number, filters: HistoryFilter): Promise<{ whereSql: string; params: any[] }> {
+  let whereSql = 'WHERE config_id = $1';
   const params: any[] = [configId];
   let paramIndex = 2;
 
   if (filters.itemName && filters.itemName.trim()) {
-    sql += ` AND item_name LIKE $${paramIndex}`;
+    whereSql += ` AND item_name LIKE $${paramIndex}`;
     params.push(`%${filters.itemName.trim()}%`);
     paramIndex++;
   }
 
   if (filters.startTime) {
-    sql += ` AND selected_at >= $${paramIndex}`;
+    whereSql += ` AND selected_at >= $${paramIndex}`;
     params.push(filters.startTime);
     paramIndex++;
   }
 
   if (filters.endTime) {
-    sql += ` AND selected_at <= $${paramIndex}`;
+    whereSql += ` AND selected_at <= $${paramIndex}`;
     params.push(filters.endTime);
     paramIndex++;
   }
 
-  sql += ' ORDER BY id DESC';
-  sql += ` LIMIT $${paramIndex}`;
+  return { whereSql, params };
+}
+
+export async function getHistoryWithFilters(filters: HistoryFilter = {}): Promise<any[]> {
+  const database = await getDatabase();
+  const configId = currentConfigId || 1;
+  const limit = filters.limit || 20;
+  const offset = filters.offset || 0;
+
+  const { whereSql, params } = await buildHistoryWhereClause(configId, filters);
+
   params.push(limit);
+  let sql = `SELECT * FROM history ${whereSql} ORDER BY id DESC LIMIT $${params.length}`;
+
+  if (offset > 0) {
+    params.push(offset);
+    sql += ` OFFSET $${params.length}`;
+  }
 
   return await database.select(sql, params);
+}
+
+export async function getHistoryCount(filters: HistoryFilter = {}): Promise<number> {
+  const database = await getDatabase();
+  const configId = currentConfigId || 1;
+
+  const { whereSql, params } = await buildHistoryWhereClause(configId, filters);
+  const result = await database.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM history ${whereSql}`, params);
+  return result[0]?.count ?? 0;
 }
 
 export async function resetHistory(): Promise<void> {
