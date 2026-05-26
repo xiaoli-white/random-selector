@@ -278,6 +278,7 @@ export async function updateItemDisabled(id: number, disabled: number): Promise<
 export async function deleteItem(id: number): Promise<void> {
   const database = await getDatabase();
   const configId = currentConfigId || 1;
+  await database.execute('DELETE FROM history WHERE item_id = $1 AND config_id = $2', [id, configId]);
   await database.execute('DELETE FROM items WHERE id = $1 AND config_id = $2', [id, configId]);
 }
 
