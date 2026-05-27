@@ -94,6 +94,7 @@ export default {
     this.loadHistory();
 
     this.isDataLoaded = true;
+    this.hideLoading();
   },
   beforeUnmount() {
     this.stopAutoSelect();
@@ -348,6 +349,13 @@ export default {
     async onSettingsRefresh() {
       await this.loadItems();
       await this.loadCustomTexts();
+    },
+    hideLoading() {
+      const el = document.getElementById('app-loading');
+      if (el) {
+        el.classList.add('hidden');
+        setTimeout(() => el.remove(), 300);
+      }
     },
   },
 };

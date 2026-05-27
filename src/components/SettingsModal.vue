@@ -127,6 +127,14 @@ export default {
       configImportText: '',
       configImportFileContent: null as string | null,
       importIncludeGlobalSettings: false,
+      importAvailableConfigs: [] as Array<{ name: string; index: number }>,
+      importSelectedConfigIndices: [] as number[],
+      importNameConflicts: [] as Array<{ name: string; index: number }>,
+      showImportConflictModal: false,
+      importConflictAction: 'skip' as 'skip' | 'replace',
+      isSaving: false,
+      isExporting: false,
+      isImporting: false,
     };
   },
   computed: {
@@ -240,6 +248,11 @@ export default {
       this.hasPassword = await hasPassword();
       const loadedTexts = await getCustomTexts();
       applyDefaultCustomTexts(loadedTexts);
+      // Force author to be one of the allowed values
+      const VALID_AUTHORS = ['nullptr', 'xiaoli-white'];
+      if (loadedTexts.authorName && !VALID_AUTHORS.includes(loadedTexts.authorName)) {
+        loadedTexts.authorName = '';
+      }
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
 
@@ -299,6 +312,10 @@ export default {
 
       const loadedTexts = await getCustomTexts();
       applyDefaultCustomTexts(loadedTexts);
+      const VALID_AUTHORS_REFRESH = ['nullptr', 'xiaoli-white'];
+      if (loadedTexts.authorName && !VALID_AUTHORS_REFRESH.includes(loadedTexts.authorName)) {
+        loadedTexts.authorName = '';
+      }
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
 
@@ -454,11 +471,13 @@ export default {
     },
 
     async handleExportConfigs() {
+      if (this.isExporting) return;
       if (this.exportSelectedConfigIds.length === 0) {
         message.warning('Please select at least one config to export');
         return;
       }
 
+      this.isExporting = true;
       try {
         const exportData = await exportConfigs(this.exportSelectedConfigIds, this.exportIncludeGlobalSettings);
         const jsonStr = JSON.stringify(exportData, null, 2);
@@ -486,13 +505,15 @@ export default {
       } catch (error) {
         console.error('Export failed:', error);
         message.error('Failed to export configs');
+      } finally {
+        this.isExporting = false;
       }
     },
 
     async handleImportFromFile(file: File): Promise<boolean> {
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const text = e.target?.result as string;
+        const text = e?.target?.result as string;
         try {
           const exportData = JSON.parse(text) as ExportData;
           if (!exportData.configs || !Array.isArray(exportData.configs)) {
@@ -503,6 +524,19 @@ export default {
           this.configImportText = text;
           this.configImportFileContent = text;
           this.importIncludeGlobalSettings = !!(exportData.globalSettings && exportData.globalSettings.length > 0);
+
+          this.importAvailableConfigs = exportData.configs.map((c, i) => ({
+            name: c.config.name,
+            index: i,
+          }));
+          this.importSelectedConfigIndices = this.importAvailableConfigs.map(c => c.index);
+
+          // Check for name conflicts with existing configs
+          const existingConfigs = await getAllConfigs();
+          this.importNameConflicts = this.importAvailableConfigs
+            .filter(ac => existingConfigs.some(ec => ec.name === ac.name));
+          this.importConflictAction = 'skip';
+
           this.showConfigImportModal = true;
         } catch {
           message.error('Failed to parse export file');
@@ -513,19 +547,54 @@ export default {
     },
 
     async handleImportConfigs() {
+      if (this.isImporting) return;
       if (!this.configImportFileContent) {
         message.warning('Please select an export file to import');
         return;
       }
 
-      try {
-        let exportData = JSON.parse(this.configImportFileContent) as ExportData;
+      // If there are name conflicts, show conflict modal first
+      if (this.importNameConflicts.length > 0) {
+        this.showImportConflictModal = true;
+        return;
+      }
 
-        if (!this.importIncludeGlobalSettings) {
-          exportData = { ...exportData, globalSettings: undefined };
+      await this.doImport();
+    },
+
+    async handleConflictImport() {
+      this.showImportConflictModal = false;
+      await this.doImport();
+    },
+
+    async doImport() {
+      if (this.isImporting) return;
+      this.isImporting = true;
+      try {
+        const exportData = JSON.parse(this.configImportFileContent!) as ExportData;
+
+        // Filter to only selected configs
+        const selectedData: ExportData = {
+          exportedAt: exportData.exportedAt,
+          configs: exportData.configs.filter((_, i) => this.importSelectedConfigIndices.includes(i)),
+        };
+
+        if (this.importIncludeGlobalSettings && exportData.globalSettings) {
+          selectedData.globalSettings = exportData.globalSettings;
         }
 
-        const result = await importConfig(exportData);
+        // Handle name conflicts according to user choice
+        const conflictNames = new Set(this.importNameConflicts.map(c => c.name));
+
+        if (this.importConflictAction === 'skip') {
+          // Remove conflicting configs from import
+          selectedData.configs = selectedData.configs.filter(
+            c => !conflictNames.has(c.config.name)
+          );
+        }
+        // If 'replace', keep them as-is (existing import logic already overwrites)
+
+        const result = await importConfig(selectedData);
 
         if (result.imported.length > 0) {
           message.success(`Successfully imported: ${result.imported.join(', ')}`);
@@ -538,12 +607,17 @@ export default {
         this.configImportText = '';
         this.configImportFileContent = null;
         this.importIncludeGlobalSettings = false;
+        this.importAvailableConfigs = [];
+        this.importSelectedConfigIndices = [];
+        this.importNameConflicts = [];
         await this.loadConfigs();
         await this.refreshConfigData();
         this.$emit('refresh');
       } catch (error) {
         console.error('Import failed:', error);
         message.error('Failed to import configs');
+      } finally {
+        this.isImporting = false;
       }
     },
 
@@ -939,138 +1013,144 @@ export default {
       }, 200);
     },
     async handleSave() {
-      const hasPwd = await hasPassword();
-      if (hasPwd) {
-        const verified = await new Promise<boolean>((resolve) => {
-          this.showPasswordModal = true;
-          this.passwordInput = '';
-          this.passwordError = '';
-          this.passwordCallback = (success: boolean) => {
-            resolve(success);
-          };
-        });
-        if (!verified) return;
-      }
-
-      if (this.pendingPasswordChange) {
-        if (this.pendingRemovePassword) {
-          await setGlobalSetting('admin_password_hash', '');
-          this.hasPassword = false;
-        } else {
-          await setPassword(this.pendingNewPassword);
-          this.hasPassword = true;
-        }
-        this.pendingPasswordChange = false;
-        this.pendingRemovePassword = false;
-        this.pendingNewPassword = '';
-      }
-
-      for (const create of this.pendingConfigCreates) {
-        const result = await createConfig(create.name);
-        if (result.config && result.config.id !== undefined) {
-          if (this.pendingConfigSwitchId === create.tempId) {
-            await switchConfig(result.config.id);
-          }
-        }
-      }
-
-      for (const copy of this.pendingConfigCopies) {
-        const result = await copyConfig(copy.sourceId, copy.newName);
-        if (result.config && result.config.id !== undefined) {
-          if (this.pendingConfigSwitchId === copy.tempId) {
-            await switchConfig(result.config.id);
-          }
-        }
-      }
-
-      for (const id of this.pendingConfigDeletes) {
-        await deleteConfig(id);
-      }
-
-      for (const rename of this.pendingConfigRenames) {
-        await renameConfig(rename.id, rename.newName);
-      }
-
-      const hadConfigSwitch = this.pendingConfigSwitchId !== null;
-
-      if (this.pendingConfigSwitchId !== null) {
-        const isPendingCreate = this.pendingConfigCreates.some(c => c.tempId === this.pendingConfigSwitchId);
-        const isPendingCopy = this.pendingConfigCopies.some(c => c.tempId === this.pendingConfigSwitchId);
-        if (!isPendingCreate && !isPendingCopy) {
-          await switchConfig(this.pendingConfigSwitchId);
-        }
-      }
-
-      if (hadConfigSwitch) {
-        const duration = await getSetting('autoDuration');
-        this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
-        this.originalAutoDuration = this.autoDuration;
-        this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
-        this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
-
-        const loadedTexts = await getCustomTexts();
-        applyDefaultCustomTexts(loadedTexts);
-        this.customTexts = loadedTexts;
-        this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
-
-        try {
-          await invoke('emit_config_changed');
-        } catch (e) {
-          console.error('Failed to emit config changed:', e);
-        }
-      }
-
-      if (this.pendingHistoryClear) {
-        await resetHistory();
-      }
-
-      for (const id of this.pendingDeletes) {
-        await deleteItem(id);
-      }
-
-      for (const item of this.pendingAdds) {
-        const result = await addItem(item.name, item.weight, item.disabled);
-        if (!result.success) {
-          message.error(`Failed to add item "${item.name}": ${result.error}`);
-        }
-      }
-
-      for (const edit of this.pendingEdits) {
-        if (edit.name !== undefined) {
-          await updateItemName(edit.id, edit.name);
-        }
-        if (edit.weight !== undefined) {
-          await updateItemWeight(edit.id, edit.weight);
-        }
-        if (edit.disabled !== undefined) {
-          await updateItemDisabled(edit.id, edit.disabled);
-        }
-      }
-
-      await setSetting('autoDuration', this.autoDuration.toString());
-
-      const alwaysOnTopChanged = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
-      await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
-      if (alwaysOnTopChanged) {
-        try {
-          await invoke('set_main_window_always_on_top', { alwaysOnTop: this.mainWindowAlwaysOnTop });
-        } catch (e) {
-          console.error('Failed to apply always on top:', e);
-        }
-      }
-
-      await saveCustomTexts(this.customTexts);
-
-      await this.loadData();
-      this.$emit('refresh');
-
+      if (this.isSaving) return;
+      this.isSaving = true;
       try {
-        await invoke('emit_custom_texts_updated');
-      } catch (e) {
-        console.error('Failed to emit custom texts updated event:', e);
-      }
+        const hasPwd = await hasPassword();
+        if (hasPwd) {
+          const verified = await new Promise<boolean>((resolve) => {
+            this.showPasswordModal = true;
+            this.passwordInput = '';
+            this.passwordError = '';
+            this.passwordCallback = (success: boolean) => {
+              resolve(success);
+            };
+          });
+          if (!verified) return;
+        }
 
-      message.success('Saved successfully');
+        if (this.pendingPasswordChange) {
+          if (this.pendingRemovePassword) {
+            await setGlobalSetting('admin_password_hash', '');
+            this.hasPassword = false;
+          } else {
+            await setPassword(this.pendingNewPassword);
+            this.hasPassword = true;
+          }
+          this.pendingPasswordChange = false;
+          this.pendingRemovePassword = false;
+          this.pendingNewPassword = '';
+        }
+
+        for (const create of this.pendingConfigCreates) {
+          const result = await createConfig(create.name);
+          if (result.config && result.config.id !== undefined) {
+            if (this.pendingConfigSwitchId === create.tempId) {
+              await switchConfig(result.config.id);
+            }
+          }
+        }
+
+        for (const copy of this.pendingConfigCopies) {
+          const result = await copyConfig(copy.sourceId, copy.newName);
+          if (result.config && result.config.id !== undefined) {
+            if (this.pendingConfigSwitchId === copy.tempId) {
+              await switchConfig(result.config.id);
+            }
+          }
+        }
+
+        for (const id of this.pendingConfigDeletes) {
+          await deleteConfig(id);
+        }
+
+        for (const rename of this.pendingConfigRenames) {
+          await renameConfig(rename.id, rename.newName);
+        }
+
+        const hadConfigSwitch = this.pendingConfigSwitchId !== null;
+
+        if (this.pendingConfigSwitchId !== null) {
+          const isPendingCreate = this.pendingConfigCreates.some(c => c.tempId === this.pendingConfigSwitchId);
+          const isPendingCopy = this.pendingConfigCopies.some(c => c.tempId === this.pendingConfigSwitchId);
+          if (!isPendingCreate && !isPendingCopy) {
+            await switchConfig(this.pendingConfigSwitchId);
+          }
+        }
+
+        if (hadConfigSwitch) {
+          const duration = await getSetting('autoDuration');
+          this.autoDuration = duration ? parseInt(duration) || DEFAULT_AUTO_DURATION : DEFAULT_AUTO_DURATION;
+          this.originalAutoDuration = this.autoDuration;
+          this.mainWindowAlwaysOnTop = await getMainWindowAlwaysOnTop();
+          this.originalMainWindowAlwaysOnTop = this.mainWindowAlwaysOnTop;
+
+          const loadedTexts = await getCustomTexts();
+          applyDefaultCustomTexts(loadedTexts);
+          this.customTexts = loadedTexts;
+          this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
+
+          try {
+            await invoke('emit_config_changed');
+          } catch (e) {
+            console.error('Failed to emit config changed:', e);
+          }
+        }
+
+        if (this.pendingHistoryClear) {
+          await resetHistory();
+        }
+
+        for (const id of this.pendingDeletes) {
+          await deleteItem(id);
+        }
+
+        for (const item of this.pendingAdds) {
+          const result = await addItem(item.name, item.weight, item.disabled);
+          if (!result.success) {
+            message.error(`Failed to add item "${item.name}": ${result.error}`);
+          }
+        }
+
+        for (const edit of this.pendingEdits) {
+          if (edit.name !== undefined) {
+            await updateItemName(edit.id, edit.name);
+          }
+          if (edit.weight !== undefined) {
+            await updateItemWeight(edit.id, edit.weight);
+          }
+          if (edit.disabled !== undefined) {
+            await updateItemDisabled(edit.id, edit.disabled);
+          }
+        }
+
+        await setSetting('autoDuration', this.autoDuration.toString());
+
+        const alwaysOnTopChanged = this.mainWindowAlwaysOnTop !== this.originalMainWindowAlwaysOnTop;
+        await setMainWindowAlwaysOnTop(this.mainWindowAlwaysOnTop);
+        if (alwaysOnTopChanged) {
+          try {
+            await invoke('set_main_window_always_on_top', { alwaysOnTop: this.mainWindowAlwaysOnTop });
+          } catch (e) {
+            console.error('Failed to apply always on top:', e);
+          }
+        }
+
+        await saveCustomTexts(this.customTexts);
+
+        await this.loadData();
+        this.$emit('refresh');
+
+        try {
+          await invoke('emit_custom_texts_updated');
+        } catch (e) {
+          console.error('Failed to emit custom texts updated event:', e);
+        }
+
+        message.success('Saved successfully');
+      } finally {
+        this.isSaving = false;
+      }
     },
     openPasswordSettings() {
       this.currentPassword = '';
@@ -1465,6 +1545,17 @@ export default {
               :checked="customTexts[field.key] === 'true'"
               @change="(val: boolean) => updateCustomText(field.key, val ? 'true' : 'false')"
             />
+            <a-select
+              v-else-if="field.key === 'authorName'"
+              :value="customTexts[field.key]"
+              placeholder="Select author"
+              style="width: 100%"
+              @change="(val: any) => updateCustomText(field.key, val || '')"
+              allow-clear
+            >
+              <a-select-option value="nullptr">nullptr</a-select-option>
+              <a-select-option value="xiaoli-white">xiaoli-white</a-select-option>
+            </a-select>
             <a-input
               v-else
               v-model:value="customTexts[field.key]"
@@ -1503,7 +1594,7 @@ export default {
     <div style="text-align: center;">
       <a-space>
         <a-button @click="handleCancel">Cancel</a-button>
-        <a-button type="primary" @click="handleSave" :disabled="!isDirty">Save</a-button>
+        <a-button type="primary" @click="handleSave" :disabled="!isDirty || isSaving" :loading="isSaving">Save</a-button>
       </a-space>
     </div>
   </a-modal>
@@ -1565,7 +1656,7 @@ export default {
   </a-modal>
 
   <!-- Export Config Modal -->
-  <a-modal v-model:open="showExportModal" title="Export Configs" @ok="handleExportConfigs" ok-text="Export" cancel-text="Cancel">
+  <a-modal v-model:open="showExportModal" title="Export Configs" @ok="handleExportConfigs" :confirm-loading="isExporting" ok-text="Export" cancel-text="Cancel">
     <a-form layout="vertical">
       <a-form-item label="Select Configs to Export">
         <a-checkbox
@@ -1598,9 +1689,49 @@ export default {
   </a-modal>
 
   <!-- Import Config Modal -->
-  <a-modal v-model:open="showConfigImportModal" title="Import Configs" @ok="handleImportConfigs" ok-text="Import" cancel-text="Cancel">
+  <a-modal v-model:open="showConfigImportModal" title="Import Configs" :confirm-loading="isImporting" @ok="handleImportConfigs" ok-text="Import" cancel-text="Cancel">
     <a-form layout="vertical">
       <a-alert type="warning" message="Importing will overwrite existing configs with the same name. History in existing configs will be cleared before import." show-icon />
+
+      <template v-if="importNameConflicts.length > 0">
+        <a-divider style="margin: 12px 0;" />
+        <a-alert type="warning" show-icon>
+          <template #message>
+            <div>The following configs already exist:</div>
+            <div v-for="conflict in importNameConflicts" :key="conflict.name">• "{{ conflict.name }}"</div>
+            <div style="margin-top: 8px;">
+              <a-radio-group v-model:value="importConflictAction">
+                <a-radio value="skip">Skip conflicting configs (keep existing)</a-radio>
+                <a-radio value="replace">Replace conflicting configs (overwrite)</a-radio>
+              </a-radio-group>
+            </div>
+          </template>
+        </a-alert>
+      </template>
+
+      <a-divider style="margin: 12px 0;" />
+      <a-form-item label="Select Configs to Import">
+        <a-checkbox
+          :checked="importAvailableConfigs.length > 0 && importSelectedConfigIndices.length === importAvailableConfigs.length"
+          :indeterminate="importSelectedConfigIndices.length > 0 && importSelectedConfigIndices.length < importAvailableConfigs.length"
+          @change="(e: any) => importSelectedConfigIndices = e.target.checked ? importAvailableConfigs.map(c => c.index) : []"
+          :disabled="importAvailableConfigs.length === 0"
+        >
+          Select All
+        </a-checkbox>
+      </a-form-item>
+      <a-divider style="margin: 8px 0;" />
+      <div v-if="importAvailableConfigs.length === 0" style="color: #999; padding: 8px 0;">No configs found in file</div>
+      <a-checkbox-group v-model:value="importSelectedConfigIndices" style="width: 100%">
+        <a-row :gutter="[8, 8]">
+          <a-col :span="12" v-for="ac in importAvailableConfigs" :key="ac.index">
+            <a-checkbox :value="ac.index">
+              {{ ac.name }}
+              <a-tag v-if="importNameConflicts.some(c => c.index === ac.index)" color="orange" size="small">Conflicts</a-tag>
+            </a-checkbox>
+          </a-col>
+        </a-row>
+      </a-checkbox-group>
       <a-divider style="margin: 12px 0;" />
       <a-form-item>
         <a-checkbox v-model:checked="importIncludeGlobalSettings">
@@ -1608,8 +1739,31 @@ export default {
         </a-checkbox>
       </a-form-item>
       <a-form-item label="Preview">
-        <a-textarea v-model:value="configImportText" :rows="8" readonly />
+        <a-textarea v-model:value="configImportText" :rows="6" readonly />
       </a-form-item>
+    </a-form>
+  </a-modal>
+
+  <!-- Import Conflict Resolution Modal -->
+  <a-modal v-model:open="showImportConflictModal" title="Config Name Conflict" @ok="handleConflictImport" ok-text="Continue Import" cancel-text="Cancel">
+    <a-form layout="vertical">
+      <a-alert type="warning" show-icon>
+        <template #message>
+          <div>The following configs from the import file already exist in the database:</div>
+          <ul style="margin: 8px 0; padding-left: 20px;">
+            <li v-for="conflict in importNameConflicts" :key="conflict.name">
+              <strong>{{ conflict.name }}</strong>
+            </li>
+          </ul>
+          <div style="margin-top: 8px;">
+            <p>Choose how to handle them:</p>
+            <a-radio-group v-model:value="importConflictAction">
+              <a-radio value="skip"><strong>Skip</strong> — Keep existing configs unchanged. Do not import the conflicting configs.</a-radio>
+              <a-radio value="replace"><strong>Replace</strong> — Overwrite existing configs with imported data (items, settings, history).</a-radio>
+            </a-radio-group>
+          </div>
+        </template>
+      </a-alert>
     </a-form>
   </a-modal>
 </template>

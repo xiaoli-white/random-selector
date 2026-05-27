@@ -60,6 +60,7 @@ export default {
     });
 
     this.isDataLoaded = true;
+    this.hideLoading();
   },
   methods: {
     async loadCustomTexts() {
@@ -88,6 +89,13 @@ export default {
     async emitWindowStateChange() {
       const { emit } = await import('@tauri-apps/api/event');
       await emit('window-state-changed');
+    },
+    hideLoading() {
+      const el = document.getElementById('app-loading');
+      if (el) {
+        el.classList.add('hidden');
+        setTimeout(() => el.remove(), 300);
+      }
     },
   },
 };
