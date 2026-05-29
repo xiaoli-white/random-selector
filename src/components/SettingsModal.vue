@@ -1493,7 +1493,7 @@ export default {
         </a-popconfirm>
       </a-tab-pane>
       <a-tab-pane key="stats" tab="Statistics">
-        <a-table :dataSource="sortedStats" :columns="statsColumns" row-key="id" size="small" :pagination="{ pageSize: 10 }">
+        <a-table :dataSource="sortedStats" :columns="statsColumns" row-key="id" size="small">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'rank'">
               <span>{{ record.rank }}</span>
