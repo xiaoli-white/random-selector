@@ -39,25 +39,34 @@ export default {
       e.preventDefault();
     });
 
-    await Promise.all([
-      this.loadCustomTexts(),
-      this.syncWindowState(),
-      listen('custom-texts-updated', async () => {
-        await this.loadCustomTexts();
-      }),
-      listen('window-state-changed', async () => {
-        await this.syncWindowState();
-      }),
-      listen('config-changed', async () => {
-        await syncCurrentConfigId();
-        await this.loadCustomTexts();
-      }),
-    ]);
+    // Register event listeners first (non-blocking for UI)
+    listen('custom-texts-updated', async () => {
+      await this.loadCustomTexts();
+    }).catch(e => console.error('Failed to listen custom-texts-updated:', e));
+
+    listen('window-state-changed', async () => {
+      await this.syncWindowState();
+    }).catch(e => console.error('Failed to listen window-state-changed:', e));
+
+    listen('config-changed', async () => {
+      await syncCurrentConfigId();
+      await this.loadCustomTexts();
+    }).catch(e => console.error('Failed to listen config-changed:', e));
 
     onConfigChanged(async () => {
       await syncCurrentConfigId();
       await this.loadCustomTexts();
     });
+
+    // Load data with error handling so UI is always shown
+    try {
+      await Promise.all([
+        this.loadCustomTexts().catch(e => console.error('Failed to load custom texts:', e)),
+        this.syncWindowState().catch(e => console.error('Failed to sync window state:', e)),
+      ]);
+    } catch (e) {
+      console.error('Floating window initialization error:', e);
+    }
 
     this.isDataLoaded = true;
     this.hideLoading();
