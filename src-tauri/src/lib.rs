@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent, MouseButton},
-    Manager, Emitter,
+    Manager, Emitter, LogicalSize,
 };
 
 static MAIN_WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
@@ -49,6 +49,14 @@ async fn show_floating_window(app: tauri::AppHandle) -> Result<(), String> {
 async fn hide_floating_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("floating") {
         window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_floating_window_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("floating") {
+        window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -251,6 +259,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             show_floating_window,
             hide_floating_window,
+            set_floating_window_size,
             show_main_window,
             hide_main_window,
             set_window_title,
