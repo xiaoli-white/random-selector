@@ -256,7 +256,7 @@ body {
 .expand-button {
   width: 28px;
   height: 100%;
-  margin: 0 2px 0 0;
+  margin: 0 8px 0 0;
   border: none;
   font-size: 11px;
   padding: 0;
@@ -272,7 +272,7 @@ body {
   justify-content: center;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 20px;
   color: #666;
   padding: 0 16px;
   text-align: center;
@@ -285,8 +285,8 @@ body {
 }
 
 .pick-result {
-  font-weight: 600;
-  color: #333;
-  font-size: 18px;
+  font-weight: 700;
+  color: #222;
+  font-size: 28px;
 }
 </style>
