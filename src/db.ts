@@ -55,6 +55,9 @@ export function onConfigChanged(callback: () => void) {
 }
 
 export async function emitConfigChanged() {
+  if (currentConfigId) {
+    configSettingsCache.set(currentConfigId, null);
+  }
   for (const listener of configChangedListeners) {
     try {
       listener();
@@ -85,6 +88,8 @@ export interface Config {
 
 let db: Database | null = null;
 let currentConfigId: number | null = null;
+let globalSettingsCache: Record<string, string> | null = null;
+const configSettingsCache: Map<number, Record<string, string> | null> = new Map();
 
 async function ensureDefaultConfig(): Promise<void> {
   if (!db) return;
@@ -207,6 +212,15 @@ export async function initDatabase(): Promise<Database> {
   await migrateConfigIds();
 
   await ensureGlobalConfig();
+
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    await listen('global-settings-changed', () => {
+      globalSettingsCache = null;
+    });
+  } catch (e) {
+    console.error('Failed to register global-settings-changed listener:', e);
+  }
 
   return db;
 }
@@ -342,13 +356,21 @@ export async function importFromTextToDb(text: string): Promise<{ success: boole
 }
 
 export async function getSetting(key: string): Promise<string | null> {
-  const database = await getDatabase();
   const configId = currentConfigId || 1;
-  const result = await database.select<AppSettings[]>(
-    'SELECT value FROM settings WHERE key = $1 AND config_id = $2',
-    [key, configId]
-  );
-  return result.length > 0 ? result[0].value : null;
+  if (!configSettingsCache.has(configId)) {
+    const database = await getDatabase();
+    const rows = await database.select<AppSettings[]>(
+      'SELECT key, value FROM settings WHERE config_id = $1',
+      [configId]
+    );
+    const cache: Record<string, string> = {};
+    for (const row of rows) {
+      cache[row.key] = row.value;
+    }
+    configSettingsCache.set(configId, cache);
+  }
+  const cache = configSettingsCache.get(configId);
+  return cache ? (cache[key] ?? null) : null;
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
@@ -362,12 +384,17 @@ export async function setSetting(key: string, value: string): Promise<void> {
 }
 
 export async function getGlobalSetting(key: string): Promise<string | null> {
-  const database = await getDatabase();
-  const result = await database.select<AppSettings[]>(
-    'SELECT value FROM settings WHERE key = $1 AND config_id = 0',
-    [key]
-  );
-  return result.length > 0 ? result[0].value : null;
+  if (!globalSettingsCache) {
+    const database = await getDatabase();
+    const rows = await database.select<AppSettings[]>(
+      'SELECT key, value FROM settings WHERE config_id = 0'
+    );
+    globalSettingsCache = {};
+    for (const row of rows) {
+      globalSettingsCache[row.key] = row.value;
+    }
+  }
+  return globalSettingsCache[key] ?? null;
 }
 
 export async function setGlobalSetting(key: string, value: string): Promise<void> {
@@ -376,6 +403,12 @@ export async function setGlobalSetting(key: string, value: string): Promise<void
     'INSERT INTO settings (key, value, config_id) VALUES ($1, $2, 0) ON CONFLICT(key, config_id) DO UPDATE SET value = $2',
     [key, value]
   );
+  try {
+    const { emit } = await import('@tauri-apps/api/event');
+    await emit('global-settings-changed');
+  } catch (e) {
+    console.error('Failed to emit global-settings-changed event:', e);
+  }
 }
 
 export async function getAllSettings(): Promise<Record<string, string>> {
