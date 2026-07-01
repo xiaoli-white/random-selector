@@ -8,7 +8,7 @@
         <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
           {{ toggleButtonText }}
         </a-button>
-        <a-button @click="toggleExpand" class="expand-button" size="large">
+        <a-button type="text" @click="toggleExpand" class="expand-button" size="large">
           {{ isExpanded ? '▲' : '▼' }}
         </a-button>
       </div>
@@ -254,15 +254,15 @@ body {
 }
 
 .expand-button {
-  width: 32px;
-  height: calc(100% - 8px);
-  margin: 4px 4px 4px 0;
+  width: 28px;
+  height: 100%;
+  margin: 0 2px 0 0;
   border: none;
-  border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   padding: 0;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.35);
 }
 
 .quick-pick-area {
