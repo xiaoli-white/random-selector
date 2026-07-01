@@ -68,6 +68,9 @@ export default {
       listen('custom-texts-updated', async () => {
         await this.loadCustomTexts();
       }),
+      listen('window-state-changed', async () => {
+        await this.updateTrayMenu();
+      }),
       listen('config-changed', async () => {
         await this.loadItems();
         await this.loadHistory();

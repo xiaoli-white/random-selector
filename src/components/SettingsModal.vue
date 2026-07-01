@@ -249,11 +249,6 @@ export default {
       this.hasPassword = await hasPassword();
       const loadedTexts = await getCustomTexts();
       applyDefaultCustomTexts(loadedTexts);
-      // Force author to be one of the allowed values
-      const VALID_AUTHORS = ['nullptr', 'xiaoli-white'];
-      if (loadedTexts.authorName && !VALID_AUTHORS.includes(loadedTexts.authorName)) {
-        loadedTexts.authorName = '';
-      }
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
 
@@ -313,10 +308,6 @@ export default {
 
       const loadedTexts = await getCustomTexts();
       applyDefaultCustomTexts(loadedTexts);
-      const VALID_AUTHORS_REFRESH = ['nullptr', 'xiaoli-white'];
-      if (loadedTexts.authorName && !VALID_AUTHORS_REFRESH.includes(loadedTexts.authorName)) {
-        loadedTexts.authorName = '';
-      }
       this.customTexts = loadedTexts;
       this.originalCustomTexts = JSON.parse(JSON.stringify(this.customTexts));
 
