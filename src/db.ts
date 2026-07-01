@@ -17,6 +17,7 @@ export const DEFAULT_CUSTOM_TEXTS: Record<string, string> = {
   trayToggleMain: 'Toggle Main',
   trayQuit: 'Quit',
   hintText: 'Click "Start" button',
+  floatingQuickPickHint: 'Click to pick',
   errorNoActiveItems: 'No active items available',
   errorRecordFailed: 'Failed to record selection',
   errorFloatingWindow: 'Failed to toggle floating window',
@@ -571,6 +572,15 @@ export async function getFloatingWindowState(): Promise<boolean> {
 
 export async function setFloatingWindowState(enabled: boolean): Promise<void> {
     await setGlobalSetting('floating_window_enabled', enabled ? 'true' : 'false');
+}
+
+export async function getFloatingWindowExpanded(): Promise<boolean> {
+    const stored = await getGlobalSetting('floating_window_expanded');
+    return stored === 'true';
+}
+
+export async function setFloatingWindowExpanded(enabled: boolean): Promise<void> {
+    await setGlobalSetting('floating_window_expanded', enabled ? 'true' : 'false');
 }
 
 export async function getMainWindowAlwaysOnTop(): Promise<boolean> {
