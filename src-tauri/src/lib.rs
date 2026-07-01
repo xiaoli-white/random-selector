@@ -207,7 +207,7 @@ pub fn run() {
             }
 
             let icon = app.default_window_icon().unwrap().clone();
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("tauri")
                 .icon(icon)
                 .menu(&menu)
                 .show_menu_on_left_click(false)

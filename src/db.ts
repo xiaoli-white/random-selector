@@ -14,7 +14,8 @@ export const DEFAULT_CUSTOM_TEXTS: Record<string, string> = {
   btnHideFloat: 'Hide Float',
   btnShowMain: 'Show Main',
   btnHideMain: 'Hide Main',
-  trayToggleMain: 'Toggle Main',
+  trayHideMain: 'Hide Main',
+  trayShowMain: 'Show Main',
   trayQuit: 'Quit',
   hintText: 'Click "Start" button',
   floatingQuickPickHint: 'Click to pick',
@@ -56,7 +57,7 @@ export function onConfigChanged(callback: () => void) {
 
 export async function emitConfigChanged() {
   if (currentConfigId) {
-    configSettingsCache.set(currentConfigId, null);
+    configSettingsCache.delete(currentConfigId);
   }
   for (const listener of configChangedListeners) {
     try {

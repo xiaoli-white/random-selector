@@ -256,13 +256,16 @@ body {
 .expand-button {
   width: 28px;
   height: 100%;
-  margin: 0 8px 0 0;
+  margin: 0 4px 0 0;
   border: none;
   font-size: 11px;
   padding: 0;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
   color: rgba(0, 0, 0, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .quick-pick-area {

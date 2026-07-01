@@ -120,8 +120,11 @@ export default {
     },
     async updateTrayMenu() {
       try {
+        const toggleText = this.showMainInterface
+          ? this.t('trayHideMain', 'Hide Main')
+          : this.t('trayShowMain', 'Show Main');
         await invoke('update_tray_menu', {
-          toggleText: this.t('trayToggleMain', 'Toggle Main'),
+          toggleText,
           quitText: this.t('trayQuit', 'Quit')
         });
       } catch (e) {
@@ -167,6 +170,7 @@ export default {
           if (currentState !== lastKnownState) {
             lastKnownState = currentState;
             this.showMainInterface = currentState;
+            this.updateTrayMenu();
           }
         } catch (e) {
         }
