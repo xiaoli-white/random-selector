@@ -1,12 +1,21 @@
 <template>
   <div class="floating-window" data-tauri-drag-region>
     <template v-if="isDataLoaded">
-      <div class="drag-handle">
-        <span class="drag-icon">⋮⋮</span>
+      <div class="content-row">
+        <div class="drag-handle">
+          <span class="drag-icon">⋮⋮</span>
+        </div>
+        <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
+          {{ toggleButtonText }}
+        </a-button>
+        <a-button @click="toggleExpand" class="expand-button" size="large">
+          {{ isExpanded ? '▲' : '▼' }}
+        </a-button>
       </div>
-      <a-button type="primary" @click="toggleMainInterface" class="toggle-button" size="large">
-        {{ toggleButtonText }}
-      </a-button>
+      <div v-if="isExpanded" class="quick-pick-area" @click="handleQuickPick">
+        <span v-if="!quickPickItem">{{ t('floatingQuickPickHint', 'Click to pick') }}</span>
+        <span v-else class="pick-result">{{ quickPickItem.name }}</span>
+      </div>
     </template>
   </div>
 </template>
@@ -15,7 +24,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { message } from 'ant-design-vue';
-import { getCustomTexts, onConfigChanged, syncCurrentConfigId } from './db';
+import { getCustomTexts, onConfigChanged, syncCurrentConfigId, getAllItems, getFloatingWindowExpanded, setFloatingWindowExpanded, weightedRandomSelect, addHistoryRecord } from './db';
 
 export default {
   name: 'FloatingWindow',
@@ -24,6 +33,10 @@ export default {
       showMainInterface: true,
       customTexts: {} as Record<string, string>,
       isDataLoaded: false,
+      isExpanded: false,
+      quickPickItem: null as { name: string; id?: number } | null,
+      items: [] as any[],
+      quickPicking: false,
     };
   },
   computed: {
@@ -39,7 +52,6 @@ export default {
       e.preventDefault();
     });
 
-    // Register event listeners first (non-blocking for UI)
     listen('custom-texts-updated', async () => {
       await this.loadCustomTexts();
     }).catch(e => console.error('Failed to listen custom-texts-updated:', e));
@@ -51,18 +63,21 @@ export default {
     listen('config-changed', async () => {
       await syncCurrentConfigId();
       await this.loadCustomTexts();
+      await this.loadItems();
     }).catch(e => console.error('Failed to listen config-changed:', e));
 
     onConfigChanged(async () => {
       await syncCurrentConfigId();
       await this.loadCustomTexts();
+      await this.loadItems();
     });
 
-    // Load data with error handling so UI is always shown
     try {
       await Promise.all([
         this.loadCustomTexts().catch(e => console.error('Failed to load custom texts:', e)),
         this.syncWindowState().catch(e => console.error('Failed to sync window state:', e)),
+        this.loadItems().catch(e => console.error('Failed to load items:', e)),
+        this.restoreFloatingWindowExpanded().catch(e => console.error('Failed to restore expanded state:', e)),
       ]);
     } catch (e) {
       console.error('Floating window initialization error:', e);
@@ -99,6 +114,63 @@ export default {
       const { emit } = await import('@tauri-apps/api/event');
       await emit('window-state-changed');
     },
+    async toggleExpand() {
+      this.isExpanded = !this.isExpanded;
+      const height = this.isExpanded ? 180.0 : 48.0;
+      try {
+        await invoke('set_floating_window_size', { width: 190.0, height });
+      } catch (e) {
+        console.error('Failed to resize floating window:', e);
+      }
+      await this.saveFloatingWindowExpanded();
+    },
+    async saveFloatingWindowExpanded() {
+      try {
+        await setFloatingWindowExpanded(this.isExpanded);
+      } catch (e) {
+        console.error('Failed to save floating window expanded state:', e);
+      }
+    },
+    async restoreFloatingWindowExpanded() {
+      try {
+        this.isExpanded = await getFloatingWindowExpanded();
+        if (this.isExpanded) {
+          await invoke('set_floating_window_size', { width: 190.0, height: 180.0 });
+        }
+      } catch (e) {
+        console.error('Failed to restore floating window expanded state:', e);
+      }
+    },
+    async loadItems() {
+      try {
+        await syncCurrentConfigId();
+        this.items = await getAllItems();
+      } catch (e) {
+        console.error('Failed to load items for floating window:', e);
+      }
+    },
+    async handleQuickPick() {
+      if (this.quickPicking) return;
+      this.quickPicking = true;
+      try {
+        await this.loadItems();
+        const activeItems = this.items.filter((i: any) => !i.disabled);
+        if (activeItems.length === 0) {
+          message.info(this.t('errorNoActiveItems', 'No active items available'));
+          this.quickPickItem = null;
+          return;
+        }
+        const picked = weightedRandomSelect(activeItems);
+        if (picked) {
+          await addHistoryRecord(picked.id!, picked.name);
+          this.quickPickItem = { name: picked.name, id: picked.id };
+        }
+      } catch (e) {
+        console.error('Quick pick failed:', e);
+      } finally {
+        this.quickPicking = false;
+      }
+    },
     hideLoading() {
       const el = document.getElementById('app-loading');
       if (el) {
@@ -130,9 +202,7 @@ body {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   background: rgba(255, 255, 255, 0.95);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -143,6 +213,15 @@ body {
   left: 0;
 }
 
+.content-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 48px;
+  flex-shrink: 0;
+  width: 100%;
+}
+
 .drag-handle {
   width: 32px;
   height: 100%;
@@ -150,7 +229,7 @@ body {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.05);
-  border-radius: 8px 0 0 8px;
+  border-radius: 8px 0 0 0;
   flex-shrink: 0;
 }
 
@@ -165,12 +244,49 @@ body {
 }
 
 .toggle-button {
-  width: calc(100% - 32px);
+  flex: 1;
   height: calc(100% - 8px);
-  margin: 4px 4px 4px 0;
+  margin: 4px 0;
   border: none;
   border-radius: 6px;
   font-size: 14px;
   -webkit-app-region: no-drag;
+}
+
+.expand-button {
+  width: 32px;
+  height: calc(100% - 8px);
+  margin: 4px 4px 4px 0;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 0;
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.quick-pick-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  font-size: 16px;
+  color: #666;
+  padding: 0 16px;
+  text-align: center;
+  min-height: 0;
+  -webkit-app-region: no-drag;
+}
+
+.quick-pick-area:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.pick-result {
+  font-weight: 600;
+  color: #333;
+  font-size: 18px;
 }
 </style>
