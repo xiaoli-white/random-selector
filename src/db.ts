@@ -157,8 +157,8 @@ export async function initDatabase(): Promise<Database> {
   const dbPath = await invoke<string>('get_db_path');
   db = await Database.load(`sqlite:${dbPath}`);
 
-  try { await db.execute('PRAGMA journal_mode = WAL'); } catch {}
-  try { await db.execute('PRAGMA busy_timeout = 5000'); } catch {}
+  try { await db.execute('PRAGMA journal_mode = WAL'); } catch (e) { console.error('Failed to set WAL mode:', e); }
+  try { await db.execute('PRAGMA busy_timeout = 5000'); } catch (e) { console.error('Failed to set busy_timeout:', e); }
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS configs (
@@ -182,8 +182,8 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
-  await db.execute('ALTER TABLE items ADD COLUMN disabled INTEGER DEFAULT 0').catch(() => {});
-  await db.execute('ALTER TABLE items ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
+  await db.execute('ALTER TABLE items ADD COLUMN disabled INTEGER DEFAULT 0').catch((e: unknown) => { console.error('ALTER TABLE items ADD COLUMN disabled failed:', e); });
+  await db.execute('ALTER TABLE items ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch((e: unknown) => { console.error('ALTER TABLE items ADD COLUMN config_id failed:', e); });
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -207,10 +207,10 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
-  await db.execute('ALTER TABLE history ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
+  await db.execute('ALTER TABLE history ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch((e: unknown) => { console.error('ALTER TABLE history ADD COLUMN config_id failed:', e); });
 
-  try { await db.execute('CREATE INDEX IF NOT EXISTS idx_history_config_id ON history(config_id)'); } catch {}
-  try { await db.execute('CREATE INDEX IF NOT EXISTS idx_history_selected_at ON history(selected_at)'); } catch {}
+  try { await db.execute('CREATE INDEX IF NOT EXISTS idx_history_config_id ON history(config_id)'); } catch (e) { console.error('Failed to create idx_history_config_id:', e); }
+  try { await db.execute('CREATE INDEX IF NOT EXISTS idx_history_selected_at ON history(selected_at)'); } catch (e) { console.error('Failed to create idx_history_selected_at:', e); }
 
   await ensureDefaultConfig();
 

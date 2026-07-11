@@ -173,6 +173,7 @@ export default {
             this.updateTrayMenu();
           }
         } catch (e) {
+          console.error('Visibility watcher error:', e);
         }
       }, 500);
     },

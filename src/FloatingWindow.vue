@@ -74,13 +74,14 @@ export default {
 
     try {
       await Promise.all([
-        this.loadCustomTexts().catch(e => console.error('Failed to load custom texts:', e)),
-        this.syncWindowState().catch(e => console.error('Failed to sync window state:', e)),
-        this.loadItems().catch(e => console.error('Failed to load items:', e)),
-        this.restoreFloatingWindowExpanded().catch(e => console.error('Failed to restore expanded state:', e)),
+        this.loadCustomTexts().catch(e => { console.error('Failed to load custom texts:', e); message.error('Failed to load custom texts'); }),
+        this.syncWindowState().catch(e => { console.error('Failed to sync window state:', e); message.error('Failed to sync window state'); }),
+        this.loadItems().catch(e => { console.error('Failed to load items:', e); message.error('Failed to load items'); }),
+        this.restoreFloatingWindowExpanded().catch(e => { console.error('Failed to restore expanded state:', e); message.error('Failed to restore expanded state'); }),
       ]);
     } catch (e) {
       console.error('Floating window initialization error:', e);
+      message.error('Floating window initialization failed');
     }
 
     this.isDataLoaded = true;
