@@ -196,6 +196,8 @@ body {
   margin: 0;
   padding: 0;
   -webkit-app-region: drag;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .floating-window {
@@ -208,6 +210,7 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   overflow: hidden;
   user-select: none;
+  -webkit-user-select: none;
   position: fixed;
   top: 0;
   left: 0;

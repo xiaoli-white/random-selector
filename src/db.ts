@@ -157,7 +157,8 @@ export async function initDatabase(): Promise<Database> {
   const dbPath = await invoke<string>('get_db_path');
   db = await Database.load(`sqlite:${dbPath}`);
 
-  await db.execute('PRAGMA journal_mode = DELETE');
+  try { await db.execute('PRAGMA journal_mode = WAL'); } catch {}
+  try { await db.execute('PRAGMA busy_timeout = 5000'); } catch {}
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS configs (
@@ -207,6 +208,9 @@ export async function initDatabase(): Promise<Database> {
   `);
 
   await db.execute('ALTER TABLE history ADD COLUMN config_id INTEGER NOT NULL DEFAULT 1').catch(() => {});
+
+  try { await db.execute('CREATE INDEX IF NOT EXISTS idx_history_config_id ON history(config_id)'); } catch {}
+  try { await db.execute('CREATE INDEX IF NOT EXISTS idx_history_selected_at ON history(selected_at)'); } catch {}
 
   await ensureDefaultConfig();
 
