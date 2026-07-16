@@ -88,6 +88,7 @@ export interface Config {
 }
 
 let db: Database | null = null;
+let historyDb: Database | null = null;
 let currentConfigId: number | null = null;
 let globalSettingsCache: Record<string, string> | null = null;
 const configSettingsCache: Map<number, Record<string, string> | null> = new Map();
@@ -218,6 +219,43 @@ export async function initDatabase(): Promise<Database> {
 
   await ensureGlobalConfig();
 
+  // Initialize history.db
+  const historyDbPath = await invoke<string>('get_history_db_path');
+  historyDb = await Database.load(`sqlite:${historyDbPath}`);
+
+  try { await historyDb.execute('PRAGMA journal_mode = WAL'); } catch (e) { console.error('Failed to set WAL mode for history.db:', e); }
+  try { await historyDb.execute('PRAGMA busy_timeout = 5000'); } catch (e) { console.error('Failed to set busy_timeout for history.db:', e); }
+
+  await historyDb.execute(`
+    CREATE TABLE IF NOT EXISTS history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      config_id INTEGER NOT NULL DEFAULT 1,
+      item_id INTEGER NOT NULL,
+      item_name TEXT NOT NULL,
+      selected_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  try { await historyDb.execute('CREATE INDEX IF NOT EXISTS idx_history_config_id ON history(config_id)'); } catch (e) { console.error('Failed to create idx_history_config_id on history.db:', e); }
+  try { await historyDb.execute('CREATE INDEX IF NOT EXISTS idx_history_selected_at ON history(selected_at)'); } catch (e) { console.error('Failed to create idx_history_selected_at on history.db:', e); }
+
+  // Migrate existing history data from config.db to history.db
+  try {
+    const oldHistory = await db.select('SELECT config_id, item_id, item_name, selected_at FROM history') as any[];
+    if (oldHistory.length > 0) {
+      for (const record of oldHistory) {
+        await historyDb.execute(
+          'INSERT INTO history (config_id, item_id, item_name, selected_at) VALUES ($1, $2, $3, $4)',
+          [record.config_id, record.item_id, record.item_name, record.selected_at]
+        );
+      }
+      await db.execute('DROP TABLE IF EXISTS history');
+      console.log(`Migrated ${oldHistory.length} history records to history.db`);
+    }
+  } catch (e) {
+    console.error('Failed to migrate history data:', e);
+  }
+
   try {
     const { listen } = await import('@tauri-apps/api/event');
     await listen('global-settings-changed', () => {
@@ -235,6 +273,13 @@ export async function getDatabase(): Promise<Database> {
     return await initDatabase();
   }
   return db;
+}
+
+export async function getHistoryDatabase(): Promise<Database> {
+  if (!historyDb) {
+    return await initDatabase();
+  }
+  return historyDb;
 }
 
 export async function getAllItems(): Promise<Item[]> {
@@ -297,15 +342,17 @@ export async function updateItemDisabled(id: number, disabled: number): Promise<
 
 export async function deleteItem(id: number): Promise<void> {
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
-  await database.execute('DELETE FROM history WHERE item_id = $1 AND config_id = $2', [id, configId]);
+  await historyDatabase.execute('DELETE FROM history WHERE item_id = $1 AND config_id = $2', [id, configId]);
   await database.execute('DELETE FROM items WHERE id = $1 AND config_id = $2', [id, configId]);
 }
 
 export async function clearAllItems(): Promise<void> {
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
-  await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
+  await historyDatabase.execute('DELETE FROM history WHERE config_id = $1', [configId]);
   await database.execute('DELETE FROM items WHERE config_id = $1', [configId]);
 }
 
@@ -443,8 +490,9 @@ export async function saveAllSettings(settings: Record<string, string>): Promise
 
 export async function addHistoryRecord(itemId: number, itemName: string): Promise<void> {
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
-  await database.execute(
+  await historyDatabase.execute(
     'INSERT INTO history (config_id, item_id, item_name) VALUES ($1, $2, $3)',
     [configId, itemId, itemName]
   );
@@ -455,9 +503,9 @@ export async function addHistoryRecord(itemId: number, itemName: string): Promis
 }
 
 export async function getHistory(limit: number = 50): Promise<any[]> {
-  const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
-  return await database.select(
+  return await historyDatabase.select(
     'SELECT * FROM history WHERE config_id = $1 ORDER BY id DESC LIMIT $2',
     [configId, limit]
   );
@@ -498,7 +546,7 @@ async function buildHistoryWhereClause(configId: number, filters: HistoryFilter)
 }
 
 export async function getHistoryWithFilters(filters: HistoryFilter = {}): Promise<any[]> {
-  const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
   const limit = filters.limit || 20;
   const offset = filters.offset || 0;
@@ -513,22 +561,23 @@ export async function getHistoryWithFilters(filters: HistoryFilter = {}): Promis
     sql += ` OFFSET $${params.length}`;
   }
 
-  return await database.select(sql, params);
+  return await historyDatabase.select(sql, params);
 }
 
 export async function getHistoryCount(filters: HistoryFilter = {}): Promise<number> {
-  const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
 
   const { whereSql, params } = await buildHistoryWhereClause(configId, filters);
-  const result = await database.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM history ${whereSql}`, params);
+  const result = await historyDatabase.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM history ${whereSql}`, params);
   return result[0]?.count ?? 0;
 }
 
 export async function resetHistory(): Promise<void> {
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const configId = currentConfigId || 1;
-  await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
+  await historyDatabase.execute('DELETE FROM history WHERE config_id = $1', [configId]);
   await database.execute('UPDATE items SET selected_count = 0 WHERE config_id = $1', [configId]);
 }
 
@@ -683,8 +732,9 @@ export async function deleteConfig(id: number): Promise<{ success: boolean; erro
   }
 
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
 
-  await database.execute('DELETE FROM history WHERE config_id = $1', [id]);
+  await historyDatabase.execute('DELETE FROM history WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM items WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM settings WHERE config_id = $1', [id]);
   await database.execute('DELETE FROM configs WHERE id = $1', [id]);
@@ -820,13 +870,14 @@ export interface ExportData {
 
 export async function exportConfig(configId: number): Promise<ExportedConfig | null> {
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
 
   const configs = await database.select('SELECT * FROM configs WHERE id = $1', [configId]) as any[];
   if (configs.length === 0) return null;
 
   const items = await database.select('SELECT * FROM items WHERE config_id = $1', [configId]) as any[];
   const settings = await database.select('SELECT * FROM settings WHERE config_id = $1', [configId]) as any[];
-  const history = await database.select('SELECT * FROM history WHERE config_id = $1', [configId]) as any[];
+  const history = await historyDatabase.select('SELECT * FROM history WHERE config_id = $1', [configId]) as any[];
 
   return {
     config: configs[0] as Config,
@@ -863,6 +914,7 @@ export async function exportConfigs(configIds: number[], includeGlobalSettings: 
 
 export async function importConfig(exportData: ExportData): Promise<{ success: boolean; imported: string[]; errors: string[] }> {
   const database = await getDatabase();
+  const historyDatabase = await getHistoryDatabase();
   const imported: string[] = [];
   const errors: string[] = [];
 
@@ -882,7 +934,7 @@ export async function importConfig(exportData: ExportData): Promise<{ success: b
           configId = existing[0].id;
           await database.execute('DELETE FROM items WHERE config_id = $1', [configId]);
           await database.execute('DELETE FROM settings WHERE config_id = $1', [configId]);
-          await database.execute('DELETE FROM history WHERE config_id = $1', [configId]);
+          await historyDatabase.execute('DELETE FROM history WHERE config_id = $1', [configId]);
         } else {
           const result = await database.execute(
             'INSERT INTO configs (name, is_active) VALUES ($1, 0)',
@@ -906,7 +958,7 @@ export async function importConfig(exportData: ExportData): Promise<{ success: b
         }
 
         for (const record of exportedConfig.history) {
-          await database.execute(
+          await historyDatabase.execute(
             'INSERT INTO history (config_id, item_id, item_name, selected_at) VALUES ($1, $2, $3, $4)',
             [configId, record.item_id, record.item_name, record.selected_at]
           );

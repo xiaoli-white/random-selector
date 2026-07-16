@@ -1,59 +1,62 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "random-selector",
-  "version": "1.1.4",
-  "identifier": "com.xiaoli.random-selector",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "random-selector",
-        "label": "main",
-        "width": 700,
-        "height": 425,
-        "minWidth": 700,
-        "minHeight": 425,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true
-      },
-      {
-        "title": "floating",
-        "label": "floating",
-        "url": "floating.html",
-        "width": 190,
-        "height": 48,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "center": false,
-        "visible": false,
-        "closable": false
-      }
-    ],
-    "security": {
-      "csp": null
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "random-selector",
+    "version": "1.2.0",
+    "identifier": "com.xiaoli.random-selector",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "devUrl": "http://localhost:1420",
+        "beforeBuildCommand": "npm run build",
+        "frontendDist": "../dist"
     },
-    "withGlobalTauri": true
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/icon.ico",
-      "icons/icon.png"
-    ]
-  },
-  "plugins": {
-    "sql": {
-      "preload": ["sqlite:config.db"]
+    "app": {
+        "windows": [
+            {
+                "title": "random-selector",
+                "label": "main",
+                "width": 700,
+                "height": 425,
+                "minWidth": 700,
+                "minHeight": 425,
+                "resizable": true,
+                "fullscreen": false,
+                "center": true
+            },
+            {
+                "title": "floating",
+                "label": "floating",
+                "url": "floating.html",
+                "width": 190,
+                "height": 48,
+                "resizable": false,
+                "decorations": false,
+                "transparent": true,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "center": false,
+                "visible": false,
+                "closable": false
+            }
+        ],
+        "security": {
+            "csp": null
+        },
+        "withGlobalTauri": true
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "icon": [
+            "icons/icon.ico",
+            "icons/icon.png"
+        ]
+    },
+    "plugins": {
+        "sql": {
+            "preload": [
+                "sqlite:config.db",
+                "sqlite:history.db"
+            ]
+        }
     }
-  }
 }

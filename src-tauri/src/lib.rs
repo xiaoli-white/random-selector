@@ -23,6 +23,14 @@ fn get_db_path() -> String {
 }
 
 #[tauri::command]
+fn get_history_db_path() -> String {
+    let exe_path = std::env::current_exe().unwrap_or_default();
+    let exe_dir = exe_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let db_path = exe_dir.join("history.db");
+    db_path.to_string_lossy().to_string()
+}
+
+#[tauri::command]
 async fn show_floating_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("floating") {
         window.show().map_err(|e| e.to_string())?;
@@ -269,6 +277,7 @@ pub fn run() {
             is_main_window_visible,
             get_exe_dir,
             get_db_path,
+            get_history_db_path,
             emit_custom_texts_updated,
             emit_config_changed,
             force_reload,
